@@ -1,0 +1,15 @@
+# dados (baixados ou gerados pelos scripts; não vão para o GitHub)
+dados/
+dados_brutos/*
+!dados_brutos/LEIA-ME.md
+saidas/
+figuras/
+*.docx
+!modelo_artigo.docx
+*.pdf
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+*.Rproj
