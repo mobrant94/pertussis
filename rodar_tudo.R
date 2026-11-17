@@ -35,4 +35,14 @@ for (script in scripts) {
 }
 
 rmarkdown::render("artigo.Rmd", output_file = "artigo.docx", encoding = "UTF-8")
+
+# Remove os indicadores (marcadores) que o pandoc cria em cada título do Word
+tmp <- tempfile(); dir.create(tmp)
+unzip("artigo.docx", exdir = tmp)
+doc <- file.path(tmp, "word", "document.xml")
+xml <- readLines(doc, encoding = "UTF-8", warn = FALSE)
+xml <- gsub("<w:bookmarkStart [^>]*/>|<w:bookmarkEnd [^>]*/>", "", xml)
+writeLines(xml, doc, useBytes = TRUE)
+arquivos <- list.files(tmp, recursive = TRUE, all.files = TRUE)
+old_wd <- setwd(tmp); zip::zip(file.path(old_wd, "artigo.docx"), arquivos); setwd(old_wd)
 message("\nManuscrito gerado: artigo.docx")
