@@ -9,7 +9,7 @@ fmt <- function(x, d = 0) format(round(x, d), big.mark = ".", decimal.mark = ","
 fl <- read.csv(file.path(pasta_saidas, "fluxograma.csv"), encoding = "UTF-8"); n <- setNames(fl$n, fl$etapa)
 g <- function(p) n[grep(p, names(n))][1]
 cx <- tibble::tribble(~x, ~y, ~txt,
-  0, 9, paste0(paste0("Registros SINAN de coqueluche, 2007–", max(anos_casos), "\nn = "), fmt(g("^Registros"))),
+  0, 9, paste0(paste0("Registros SINAN de coqueluche, ", min(anos_casos), "–", max(anos_casos), "\nn = "), fmt(g("^Registros"))),
   0, 7, paste0(paste0("Início dos sintomas em ", min(anos_casos), "–", max(anos_casos), "\nn = "), fmt(g("^Registros") - g("^Início"))),
   0, 5, paste0("Notificações elegíveis em < 5 anos\nn = ", fmt(g("^Notificações elegíveis"))),
   0, 3, paste0("Casos confirmados\nn = ", fmt(g("^Confirmados$"))),

@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # 02_casos_sinan.R
 # Casos de coqueluche em menores de 5 anos (SINAN).
-# Arquivos: dados_brutos/COQUBR07.dbc ... COQUBR25.dbc
+# Arquivos: dados_brutos/COQUBR10.dbc ... COQUBR25.dbc (2010 em diante)
 #   (https://datasus.saude.gov.br/transferencia-de-arquivos/ -> SINAN -> Coqueluche)
 # Caso confirmado: CLASSI_FIN = 1. Confirmação laboratorial: CRITERIO = 1.
 # ------------------------------------------------------------------------------
@@ -14,6 +14,9 @@ variaveis <- c("DT_NOTIFIC", "ID_MUNICIP", "ID_UNIDADE", "DT_SIN_PRI", "ANO_NASC
                "NU_IDADE_N", "CS_SEXO", "ID_MN_RESI", "CLASSI_FIN", "CRITERIO", "EVOLUCAO")
 
 arquivos <- list.files(pasta_brutos, pattern = "^COQUBR\\d{2}\\.dbc$", full.names = TRUE)
+# apenas os arquivos do período do estudo (2010 em diante)
+ano_arquivo <- 2000 + as.integer(sub("^COQUBR(\\d{2})\\.dbc$", "\\1", basename(arquivos)))
+arquivos <- arquivos[ano_arquivo %in% anos_casos]
 message(length(arquivos), " arquivos do SINAN encontrados")
 
 lista <- list()
@@ -51,7 +54,7 @@ sinan_unicos  <- sinan_lt5 |>
            NU_IDADE_N, CS_SEXO, ID_MN_RESI, .keep_all = TRUE)
 
 fluxo <- tibble(
-  etapa = c(paste0("Registros nos arquivos SINAN (2007–", max(anos_casos), ")"),
+  etapa = c(paste0("Registros nos arquivos SINAN (", min(anos_casos), "–", max(anos_casos), ")"),
             paste0("Início dos sintomas ausente ou fora de ", min(anos_casos), "–", max(anos_casos)),
             "Idade ≥ 5 anos ou ignorada",
             "Duplicidades"),
