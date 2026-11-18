@@ -3,7 +3,9 @@
 # Coberturas vacinais municipais (SI-PNI), arquivo dados_brutos/pni_completo.xlsx
 #   aba DTP:  esquema primário da vacina DTP em crianças
 #   aba DTPA: dTpa em gestantes
-# Regras: valores < 1% = ausentes; valores > 120% = 120%.
+# Regras: valores < 1% = ausentes (falha de registro); nas exposições municipais,
+#   valores > 100% = 100%. Totais nacionais e por UF usam os valores sem limite
+#   (equivalem a doses aplicadas / nascidos vivos, como no cálculo oficial).
 # Exposições do estudo, por município:
 #   delta_dtp: cobertura média de DTP em 2019–2023 menos a de 2010–2014 (p.p.)
 #   nao_vac:   proporção estimada de crianças nascidas em 2019–2023 sem o esquema
@@ -23,13 +25,14 @@ ler_aba <- function(aba) {
                  names_pattern = "^dtp_(\\d{4})$") |>
     mutate(code_muni = sprintf("%06d", as.integer(code_muni)),
            ano = as.integer(ano),
-           cobertura = as.numeric(cobertura),
-           cobertura = ifelse(cobertura < 1, NA, pmin(cobertura, 120)))
+           bruta = as.numeric(cobertura),
+           bruta = ifelse(bruta < 1, NA, bruta),
+           cobertura = pmin(bruta, 100))
 }
 
-dtp  <- ler_aba("DTP")  |> rename(dtp = cobertura)
-dtpa <- ler_aba("DTPA") |> rename(dtpa = cobertura) |>
-  mutate(dtpa = ifelse(ano < 2015, NA, dtpa))     # dTpa em gestantes começou em 2014
+dtp  <- ler_aba("DTP")  |> rename(dtp = cobertura, dtp_bruta = bruta)
+dtpa <- ler_aba("DTPA") |> rename(dtpa = cobertura, dtpa_bruta = bruta) |>
+  mutate(dtpa = ifelse(ano < 2015, NA, dtpa), dtpa_bruta = ifelse(ano < 2015, NA, dtpa_bruta))     # dTpa em gestantes começou em 2014
 
 nascidos_ano <- readRDS(file.path(pasta_proc, "nascidos_mun_mes.rds")) |>
   group_by(code_muni, ano) |>
@@ -106,16 +109,16 @@ saveRDS(cobertura, file.path(pasta_proc, "cobertura_mun.rds"))
 cobertura_nacional <- cobertura_ano |>
   filter(!is.na(nv), nv > 0) |>
   group_by(ano) |>
-  summarise(dtp  = weighted.mean(dtp, nv, na.rm = TRUE),
-            dtpa = weighted.mean(dtpa, nv, na.rm = TRUE))
+  summarise(dtp  = weighted.mean(dtp_bruta, nv, na.rm = TRUE),
+            dtpa = weighted.mean(dtpa_bruta, nv, na.rm = TRUE))
 salvar_csv(cobertura_nacional, "cobertura_nacional_ponderada.csv")
 
 cobertura_uf <- cobertura_ano |>
   filter(!is.na(nv), nv > 0) |>
   mutate(uf = substr(code_muni, 1, 2)) |>
   group_by(uf, ano) |>
-  summarise(dtp  = weighted.mean(dtp, nv, na.rm = TRUE),
-            dtpa = weighted.mean(dtpa, nv, na.rm = TRUE), .groups = "drop")
+  summarise(dtp  = weighted.mean(dtp_bruta, nv, na.rm = TRUE),
+            dtpa = weighted.mean(dtpa_bruta, nv, na.rm = TRUE), .groups = "drop")
 salvar_csv(cobertura_uf, "cobertura_uf_ponderada.csv")
 
 # 5. Resumo -----------------------------------------------------------------------
