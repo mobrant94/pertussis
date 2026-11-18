@@ -1,0 +1,448 @@
+---
+title: "Pertussis resurgence in children under five years in Brazil, 2024–2025: magnitude, laboratory confirmation, vaccination and primary health care"
+output:
+  word_document:
+    reference_docx: modelo_artigo.docx
+lang: en-US
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+suppressPackageStartupMessages({ library(dplyr); library(tidyr); library(flextable); library(stringr) })
+SAI <- "saidas"; FIG <- "figuras_en"
+rd <- function(f, ...) read.csv(file.path(SAI, f), encoding = "UTF-8", ...)
+ex <- function(f) file.exists(file.path(SAI, f))
+f <- function(x, d = 1) { x <- as.numeric(x); ifelse(is.na(x), "—", formatC(x, format = "f", digits = d, big.mark = ",", decimal.mark = ".")) }
+n0 <- function(x) formatC(round(as.numeric(x)), format = "d", big.mark = ",")
+ic <- function(r, l, h, d = 2) paste0(f(r, d), "; 95% CI ", f(l, d), "–", f(h, d))
+icx <- function(x, d = 2) ic(if ("irr" %in% names(x)) x$irr else x$rr, x$lo, x$hi, d)
+pv <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001" else paste0("= ", f(p, 3))
+sig <- function(l, h) isTRUE(l > 1 | h < 1)
+pct <- function(r) f(100 * abs(r - 1), 0)
+meses <- month.name
+mes_ano <- function(d) { d <- as.Date(d); if (is.na(d)) "—" else paste(meses[as.integer(format(d, "%m"))], format(d, "%Y")) }
+
+fl <- rd("fluxograma.csv"); N <- setNames(fl$n, fl$etapa); g <- function(p) N[grep(p, names(N))][1]
+conf <- rd("confirmacao_por_ano.csv")
+tt <- rd("taxa_anual_total.csv"); tf <- rd("taxa_anual_faixa.csv"); tr <- rd("taxa_anual_regiao.csv")
+JP <- "principal"; INI <- as.Date("2024-07-01"); FIM <- as.Date("2025-12-01")
+tc <- rd("tercis_resumo.csv"); TC <- function(e, k) tc[tc$exposicao == e, ][grep(k, tc$categoria[tc$exposicao == e], fixed = TRUE), ]
+nesf <- if (file.exists("dados/processados/aps_mun.rds")) table(as.character(readRDS("dados/processados/aps_mun.rds")$cat_aps)) else NULL
+rr <- rd("rr_principal_vs_ref.csv"); rrm <- rd("rr_mensal_2024.csv"); dc <- rd("decomposicao_excesso_principal.csv")
+RRJ <- function(j) rd(paste0("rr_", j, "_vs_ref.csv"))
+# painel mensal: observado/esperado mês a mês e taxas no período
+pm <- readRDS("dados/processados/painel_mensal.rds")
+tx_ref <- pm |> filter(ano %in% 2016:2019) |> group_by(faixa, regiao, mes) |> summarise(tx = sum(casos) / sum(pop), .groups = "drop")
+oe_mes <- pm |> filter(ano %in% 2024:2025) |> left_join(tx_ref, by = c("faixa", "regiao", "mes")) |>
+  group_by(data) |> summarise(obs = sum(casos), esp = sum(tx * pop), .groups = "drop") |> mutate(oe = obs / esp)
+oe_inicio <- min(oe_mes$data[oe_mes$oe > 1]); oe_fim <- max(oe_mes$data[oe_mes$oe > 1 & oe_mes$data < as.Date("2025-07-01")])
+oe_pico <- oe_mes |> slice_max(oe, n = 1)
+OE <- function(d) oe_mes$oe[oe_mes$data == as.Date(d)]
+na_janela <- pm |> filter(data >= INI, data <= FIM)
+n_meses <- length(unique(na_janela$data))
+cn <- rd("cobertura_nacional_ponderada.csv"); cr <- rd("cobertura_resumo_municipal.csv")
+uf <- rd("uf_correlacoes.csv"); dv <- rd("denominador_vs_censo.csv")
+md_all <- rd("modelos_cobertura_excesso.csv"); md <- md_all |> filter(ano_alvo == JP)
+R <- function(e, n, x = rr) x |> filter(estrato == e, nivel == n)
+D <- function(e, n, x = dc) x |> filter(estrato == e, nivel == n)
+M <- function(gr, ex, mo, te = NULL, x = md) { y <- x |> filter(grupo == gr, exposicao == ex, modelo == mo); if (!is.null(te)) y <- y |> filter(termo == te); y }
+EXD <- "Variação da DTP"; EXN <- "Não vacinados 2019–2023"; EXT <- "dTpa 2023–2024"
+
+# magnitude e distribuição
+tot <- R("Total", "< 5 anos"); ex_tot <- sum(dc$excesso[dc$estrato == "Regiao"])
+esp_tot <- sum(dc$esp[dc$estrato == "Regiao"]); obs_tot <- sum(dc$obs[dc$estrato == "Regiao"])
+f1 <- D("Semestre", "s2_2024"); f2 <- D("Semestre", "s1_2025"); f3 <- D("Semestre", "s2_2025"); lab <- R("Criterio", "lab"); nlab <- R("Criterio", "nlab")
+pct_lab_ref <- with(conf |> filter(ano %in% 2016:2019), 100 * sum(lab) / sum(conf))
+inv <- rrm |> filter(faixa == "total", lo > 1) |> pull(mes)
+mx <- rrm |> filter(faixa == "total") |> slice_max(rr, n = 1)
+taxa <- function(a) tt$taxa[tt$ano == a]
+taxa_jan <- 1e5 * sum(na_janela$casos) / (sum(na_janela$pop) / 12)
+taxa_de_ref <- with(tt |> filter(ano %in% 2016:2019), 1e5 * sum(casos) / sum(pa))
+pico_hist <- tt |> filter(ano < 2020) |> slice_max(taxa, n = 1)
+reg_menos <- dc |> filter(estrato == "Regiao", excesso < 0) |> pull(nivel)
+
+# 2025
+tem25 <- TRUE
+rr24a <- RRJ("ano_2024"); rr25 <- RRJ("ano_2025"); rrjd <- RRJ("jul_dez_2024")
+rr2425 <- RRJ("ano_2024_2025"); tot2425 <- R("Total", "< 5 anos", rr2425)
+tot24a <- R("Total", "< 5 anos", rr24a); tot25 <- R("Total", "< 5 anos", rr25); totjd <- R("Total", "< 5 anos", rrjd)
+MJ <- function(j, gr, e, mo = "e_continua_regiao_ano") M(gr, e, mo, x = md_all |> filter(ano_alvo == j))
+
+# detecção e momento da onda (06c)
+tem_det <- ex("deteccao_por_regiao.csv")
+if (tem_det) { det <- rd("deteccao_por_regiao.csv"); DT <- function(r, p) det |> filter(regiao == r, periodo == p)
+  det_br <- det |> group_by(periodo) |> summarise(across(c(notif, conf, lab, pa), sum)) |>
+    mutate(tx_notif = 1e5 * notif / pa, pct_conf = 100 * conf / notif, pct_lab = 100 * lab / conf, tx_clin = 1e5 * (conf - lab) / pa, tx_lab = 1e5 * lab / pa)
+  B <- function(p) det_br |> filter(periodo == p) }
+tem_onda <- ex("momento_onda_regiao.csv"); if (tem_onda) onda <- rd("momento_onda_regiao.csv")
+# ESF < 50%: participação nos nascidos vivos e capitais
+tem_apsp <- file.exists("dados/processados/aps_mun.rds") && file.exists("dados/processados/cobertura_mun.rds")
+if (tem_apsp) {
+  CAPS <- c("110020","130260","120040","150140","160030","140010","172100","211130","221100","230440","240810","250750","261160",
+            "270430","280030","292740","310620","320530","330455","355030","410690","420540","431490","500270","510340","520870","530010")
+  ap <- readRDS("dados/processados/aps_mun.rds") |> inner_join(readRDS("dados/processados/cobertura_mun.rds") |> select(code_muni, nv_1923), by = "code_muni")
+  ap_lt50 <- ap |> summarise(pct_nv = 100 * sum(nv_1923[cat_aps == "< 50%"], na.rm = TRUE) / sum(nv_1923, na.rm = TRUE),
+                             cap = sum(cat_aps == "< 50%" & substr(as.character(code_muni), 1, 6) %in% CAPS))
+}
+# subdetecção no Norte e no Nordeste (06d)
+tem_sub <- tem_det && ex("subdeteccao_magnitude.csv") && ex("subdeteccao_modelos.csv")
+if (tem_sub) { smg <- rd("subdeteccao_magnitude.csv"); smd <- rd("subdeteccao_modelos.csv")
+  C_INV <- "Investigação no nível de 2016–2019"; C_SSE <- "Mesma variação do Sul e do Sudeste"
+  SK <- function(cen, r) smg |> filter(ano == 9999, cenario == cen, regiao == r) |> transmute(k, excesso, rr = oe, lo, hi)
+  SA <- function(cen, comp, e = "Não vacinados 2019–2023") smd |> filter(ano_alvo == 9999, cenario == cen, comparacao == comp, exposicao == e) }
+
+# cobertura e excesso: estimativa principal = efeitos fixos de município e de região x ano
+dl_e <- M("6m_4a", EXD, "e_continua_regiao_ano"); nv_e <- M("6m_4a", EXN, "e_continua_regiao_ano"); tp_e <- M("lt_6m", EXT, "e_continua_regiao_ano")
+dl_d <- M("6m_4a", EXD, "d_continua"); nv_d <- M("6m_4a", EXN, "d_continua")
+dl_a <- M("6m_4a", EXD, "a_rr_categoria"); nv_a <- M("6m_4a", EXN, "a_rr_categoria"); tp_a <- M("lt_6m", EXT, "a_rr_categoria")
+cat_txt <- function(x) paste0(tolower(x$termo), " (RR ", icx(x), ")", collapse = "; ")
+nv_assoc <- sig(nv_e$lo, nv_e$hi) && nv_e$irr > 1; dl_assoc <- sig(dl_e$lo, dl_e$hi) && dl_e$irr > 1
+tp_assoc <- sig(tp_e$lo, tp_e$hi) && tp_e$irr > 1
+inverso_nacional <- isTRUE(nv_d$hi < 1) | isTRUE(dl_d$hi < 1)
+nv_jd <- MJ("jul_dez_2024", "6m_4a", EXN); tp_jd <- MJ("jul_dez_2024", "lt_6m", EXT)
+nv_2425 <- MJ("ano_2024_2025", "6m_4a", EXN); tp_2425 <- MJ("ano_2024_2025", "lt_6m", EXT)
+nv_24 <- MJ("ano_2024", "6m_4a", EXN); tp_24 <- MJ("ano_2024", "lt_6m", EXT)
+nv25 <- MJ("ano_2025", "6m_4a", EXN); dl25 <- MJ("ano_2025", "6m_4a", EXD); tp25 <- MJ("ano_2025", "lt_6m", EXT)
+tem_sl <- ex("sensibilidade_laboratorio.csv")
+if (tem_sl) { sl <- rd("sensibilidade_laboratorio.csv") |> filter(desfecho == "Confirmados por laboratório")
+  SL <- function(e) sl |> filter(exposicao == e) }
+tem_atr <- ex("casos_atribuiveis_2024.csv")
+if (tem_atr) { atr <- rd("casos_atribuiveis_2024.csv"); AT <- function(gr) atr |> filter(grupo == gr) }
+
+# atenção primária
+tem_aps <- ex("modelos_aps.csv") && ex("aps_resumo.csv")
+if (tem_aps) {
+  ar <- rd("aps_resumo.csv"); ma_all <- rd("modelos_aps.csv"); ma <- ma_all |> filter(ano_alvo == JP)
+  A <- function(gr, e, mo, te = NULL) { y <- ma |> filter(grupo == gr, exposicao == e, modelo == mo); if (!is.null(te)) y <- y |> filter(termo == te); y }
+  int_dl <- A("6m_4a", EXD, "g_interacao", "interacao"); int_nv <- A("6m_4a", EXN, "g_interacao", "interacao")
+  int_tp <- A("lt_6m", EXT, "g_interacao", "interacao"); int_lab <- A("6m_4a", EXN, "g_interacao_lab", "interacao")
+  cond <- function(a) A("6m_4a", EXN, "g_efeito_condicional", paste0("APS ", a, "%"))
+  aps_i <- A("6m_4a", EXD, "i_aps"); AI <- function(k) aps_i |> filter(termo == k)
+  modifica <- any(c(int_dl$p, int_nv$p, int_tp$p) < 0.05, na.rm = TRUE)
+  AIJ <- function(j, k) ma_all |> filter(ano_alvo == j, grupo == "6m_4a", exposicao == EXD, modelo == "i_aps", termo == k)
+  tem_ec <- ex("esf_cobertura_vacinal.csv") && ex("esf_cobertura_por_categoria.csv")
+  if (tem_ec) { ecv <- rd("esf_cobertura_vacinal.csv"); ecc <- rd("esf_cobertura_por_categoria.csv")
+    EV <- function(y) ecv |> filter(desfecho == y) |> slice(1); EC <- function(r, k) ecc |> filter(regiao == r, cat_aps == k) }
+  tem_med <- ex("mediacao_esf.csv"); if (tem_med) { med <- rd("mediacao_esf.csv"); MD <- function(e) med |> filter(efeito == e) |> transmute(irr, lo = irr_lo, hi = irr_hi) }
+} else { tem_ec <- tem_med <- FALSE }
+```
+
+
+**Authors:** Marcos Brum^a^ (0000-0001-8873-2385), Letícia Bortolini Loch^a^, Giovanna Nascimento dos Santos (0009-0005-1282-4677), Mariana, Yasmin, Jordana Henz Hammes (0000-0003-0307-5748), Frederico Friedrich (0000-0001-6939-0340), Marcelo Comerlato Scotta (0000-0001-5892-4052), Marcus Herbert Jones^a^ (0000-0002-8263-1265)
+
+^a^ Graduate Program in Pediatrics and Child Health, School of Medicine, Pontifical Catholic University of Rio Grande do Sul (PUCRS), Av. Ipiranga 6681, Porto Alegre, RS 90619-900, Brazil.
+
+**Corresponding author:** Marcos Brum, Graduate Program in Pediatrics and Child Health, PUCRS, Av. Ipiranga 6681, Porto Alegre, RS 90619-900, Brazil. E-mail: [e-mail]
+
+```{=openxml}
+<w:p><w:r><w:br w:type="page"/></w:r></w:p>
+```
+
+# Abstract
+
+Pertussis resurged in many countries after the COVID-19 pandemic. In Brazil, the 2024 increase followed a decade of declining vaccination coverage. Using a monthly panel of Brazilian municipalities (2010–2025), with confirmed pertussis cases in children under five years and populations reconstructed from live births, we compared incidence from July 2024 to December 2025, the period of epidemic circulation, with 2016–2019 by negative binomial regression. Associations with the proportion of children without the primary diphtheria–tetanus–pertussis (DTP) series and with maternal tetanus–diphtheria–acellular pertussis (Tdap) coverage were estimated by Poisson regression comparing municipalities within the same region; the role of the Family Health Strategy (FHS) was assessed with interaction and mediation models. Incidence was `r f(taxa_jan)` cases per 100,000 child-years, `r f(tot$rr, 2)` times that of 2016–2019 (95% confidence interval [CI] `r f(tot$lo, 2)`–`r f(tot$hi, 2)`), with `r n0(ex_tot)` excess cases, `r f(f1$pct_excesso, 0)`% in the second half of 2024. The increase predominated in children aged 6 months to 4 years and in the South, Southeast and Center-West, and was restricted to laboratory-confirmed cases. Within regions, each 10 percentage points lower maternal Tdap coverage was associated with a `r pct(tp_e$irr)`% larger increase in infants under 6 months (rate ratio `r icx(tp_e)`). The association with unvaccinated children was imprecise over the whole period (rate ratio `r icx(nv_e)`) and clearer in the first phase of the wave (`r icx(nv_jd)`). The FHS was associated with higher DTP coverage but did not modify these associations. Declining coverage added a small, preventable share of cases, and maternal Tdap vaccination consistently protected infants.
+
+**Keywords:** Pertussis; Vaccination coverage; Maternal immunization; Primary health care; Ecological study; Brazil
+
+# 1. Introduction
+
+Pertussis, caused by *Bordetella pertussis*, is most severe in the first months of life, before the primary vaccine series is complete, and this age group accounts for most hospitalizations and deaths [1,2]. Despite universal vaccination, the disease remains endemic, with epidemics every three to five years driven by the accumulation of susceptible individuals and by waning immunity after acellular vaccines [3,4].
+
+After minimal circulation during the COVID-19 pandemic, several countries recorded their highest incidence in decades in 2023–2024 [5,6], and confirmed cases rose sharply in Brazil in 2024 [7]. Three non-exclusive explanations have been proposed: the build-up of susceptible children during the period of low transmission, declining vaccination coverage and changes in diagnostic practice [8–12]. Coverage of the primary series of DTP-containing vaccines fell in the second half of the 2010s and during the pandemic, with partial recovery from 2022 [10,11]; coverage of maternal Tdap, introduced in 2014, remained below target for most of the period [13]; and the expansion of real-time polymerase chain reaction (PCR) in public health laboratories increased the capacity to confirm cases [12].
+
+In Brazil, routine vaccination, the recall of children with overdue doses and the first assessment of children with cough take place mainly in primary health care, organized by the Family Health Strategy (FHS). FHS teams, with community health workers responsible for defined territories, covered about 62% of the population in 2014 [14]. FHS expansion was associated with lower infant mortality in Brazilian municipalities [15] and reduced inequalities in COVID-19 vaccination [16]. Municipalities with higher FHS coverage and more community health workers more often reached influenza vaccination targets [17], but FHS coverage did not ensure that targets for the pentavalent vaccine were met in state capitals [18]. Whether the FHS preserved childhood coverage during the decade of decline and helped contain outbreaks of vaccine-preventable diseases therefore remains uncertain.
+
+An increase concentrated where coverage fell would call for catch-up vaccination in the most affected municipalities, whereas a generalized increase accompanied by more testing would call for priority to surveillance and infant protection. We therefore estimated how much pertussis increased in children under five years in Brazil in 2024–2025, and in which ages, regions, months and confirmation criteria. We also assessed whether the increase was larger in municipalities with more unvaccinated children and pregnant women, how many cases vaccination could have prevented, and whether the FHS helped to keep children vaccinated and to contain the increase.
+
+# 2. Methods
+
+## 2.1. Design and data sources
+
+This longitudinal ecological study covered January 2010 to December 2025 and is reported according to the RECORD guideline [19]. Pertussis cases were obtained from the Notifiable Diseases Information System (SINAN) [20]. Live births by municipality of residence and month of birth (Live Birth Information System) and deaths by state, year and age group (Mortality Information System) were obtained from TabNet/DATASUS [21] with the datasus R package [22]; live births were included from 2005, the birth year of children aged under five years in 2010. Municipal vaccination coverage was obtained from the National Immunization Program information system [23] and FHS coverage from the e-Gestor Atenção Básica system [24].
+
+## 2.2. Cases
+
+We included notifications with symptom onset between 2010 and 2025, age under five years and a municipality of residence with a denominator, after removal of duplicates. The outcome was the monthly number of confirmed cases by municipality of residence and age group (< 6 months, 6–11 months and 1–4 years), according to the month of symptom onset. Cases were classified by confirmation criterion (laboratory, or clinical and epidemiological link).
+
+## 2.3. Population at risk
+
+The population at risk was estimated monthly for each municipality and age group by the cohort-component method applied to birth cohorts [25]. For each month *t*, the population of age group *G* was the sum, over the ages *a* (in months) in the group, of live births in month *t* − *a* multiplied by the probability of survival to age *a*: pop~G~(*t*) = Σ~a~ LB(*t* − *a*) × [1 − *F*(*a*)]. Cumulative mortality *F*(*a*) was derived from the ratios of neonatal, post-neonatal and 1–4-year deaths to live births in the state and year of birth, assuming a uniform distribution of deaths within each age interval. Migration was not considered, and municipalities created after 2005 were excluded. The denominator was compared with the 2010 and 2022 Population Censuses.
+
+## 2.4. Exposures
+
+For children aged 6 months to 4 years, the main exposure was the estimated proportion of unvaccinated children in the 2019–2023 birth cohorts, that is, the mean proportion not covered by the primary DTP series weighted by live births in each year. The secondary exposure was the change in DTP coverage between 2010–2014 and 2019–2023, in percentage points (pp). For infants under 6 months, the exposure was maternal Tdap coverage in 2023–2024. In categorical analyses, the proportion of unvaccinated children and Tdap coverage were divided into tertiles weighted by live births in 2019–2023, so that each tertile included about one third of children rather than one third of municipalities. Cut-off points were `r f(TC("nao_vac", "T1")$corte_1)`% and `r f(TC("nao_vac", "T1")$corte_2)`% for unvaccinated children (`r n0(TC("nao_vac", "T1")$municipios)`, `r n0(TC("nao_vac", "T2")$municipios)` and `r n0(TC("nao_vac", "T3")$municipios)` municipalities in the lower, middle and upper tertiles) and `r f(TC("dtpa", "T1")$corte_1)`% and `r f(TC("dtpa", "T1")$corte_2)`% for Tdap coverage (`r n0(TC("dtpa", "T1")$municipios)`, `r n0(TC("dtpa", "T2")$municipios)` and `r n0(TC("dtpa", "T3")$municipios)` municipalities); the unequal number of municipalities reflects the concentration of children in larger municipalities. The change in DTP coverage was classified as stable or increasing (`r n0(TC("delta_dtp", "Estável")$municipios)` municipalities), a decline of less than 10 pp (`r n0(TC("delta_dtp", "< 10")$municipios)`) or a decline of 10 pp or more (`r n0(TC("delta_dtp", "≥ 10")$municipios)`). Coverage below 1% was treated as missing, as it indicates recording failure, and coverage above 100%, resulting from inconsistencies in the numerator and denominator of the administrative calculation [26], was capped at 100%; the proportion of unvaccinated children was not calculated for municipalities with less than three years of data in 2019–2023. `r if (tem_aps) paste0("FHS coverage was summarized as the municipal mean for ", ar$anos, ", by the method in force until 2020, and classified as < 50%, 50–79.9% and ≥ 80%", if (!is.null(nesf)) paste0(" (", n0(nesf[["< 50%"]]), ", ", n0(nesf[["50–79,9%"]]), " and ", n0(nesf[["≥ 80%"]]), " municipalities, respectively)") else "", ".") else ""`
+
+## 2.5. Statistical analysis
+
+Rates were expressed per 100,000 person-years. The resurgence period comprised July 2024 to December 2025. For each month of 2024 and 2025, observed cases were compared with those expected by applying the 2016–2019 rates for each age group, region and calendar month to the population of the month. From January to June 2024, cases remained below expectation, still under the low circulation that followed the pandemic, and exceeded it from July 2024 (Fig. S1), the month in which the Pan American Health Organization warned of increasing pertussis in the Americas, including Brazil [6]. Susceptibility accumulated through declining coverage and waning immunity only becomes disease when *B. pertussis* circulates: without circulation, unvaccinated children do not become ill, and coverage cannot be reflected in incidence. The analysis period was therefore delimited by epidemic circulation, starting in the first month with cases above expectation and extending to the end of the available series, including the decline of the wave. Because this start was identified in the data, the full 2024–2025 biennium, whose delimitation does not depend on the course of the epidemic, was analyzed as a reference; calendar years 2024 and 2025 and the second half of 2024 were assessed in supplementary analyses. Incidence was compared with 2016–2019 by negative binomial regression with the calendar month as the unit, terms for month of the year and a population offset, overall and by age group, region and confirmation criterion; for calendar years, monthly rate ratios (RR) were obtained from the interaction between period and month. Excess cases were the difference between observed and expected cases. To assess the contribution of detection, notification rates and clinical and laboratory confirmation were compared between periods in each region, and we identified the month in which cases first exceeded twice the expected number.
+
+The association between non-vaccination and the increase in cases was estimated in a municipal panel in which each year of 2016–2019 and the period July 2024 to December 2025 were the time units, by Poisson regression with municipality and region × period fixed effects, a population offset and standard errors clustered by municipality [27]. The estimate expresses how much larger the increase was per 10 pp more unvaccinated children or decline in coverage. The model was repeated with period fixed effects only, comparing municipalities nationwide, and restricted to laboratory-confirmed cases. Preventable cases were estimated by applying the coefficients of the main model to observed cases under two scenarios: a proportion of unvaccinated children equal to that of 2010–2014, for children aged 6 months to 4 years, and maternal Tdap coverage of at least 80%, for infants under 6 months [28]. Because notification of suspected cases changed little in the North and Northeast while it increased in the South and Southeast, a quantitative bias analysis multiplied the cases of these two regions in the study period by fixed factors (1.5, 2 and 3) and by two empirical factors: the one needed to return notification to its 2016–2019 level and the one needed for it to change as in the South and Southeast, the latter an upper bound [29]. The correction was applied only to the study period, since time-constant under-detection does not affect the comparison with 2016–2019.
+
+The role of primary health care was assessed with an interaction term between the vaccination exposure, period and FHS coverage per 10 pp, as in the analysis of primary health care as a modifier of COVID-19 vaccination [16]; with a linear regression of vaccination coverage on FHS coverage, weighted by live births and adjusted for region; and by decomposing the effect of the FHS on the increase into an indirect component, mediated by the proportion of unvaccinated children, and a direct component, using the product-of-coefficients method with municipality-clustered bootstrap confidence intervals [30]. Analyses were performed in R [31]; the scripts that reproduce all data processing, analyses and the manuscript are available at https://github.com/mobrant94/pertussis.
+
+## 2.6. Ethics
+
+The study used publicly available, de-identified aggregate data and is exempt from ethics committee review under Brazilian National Health Council Resolution 510/2016 [32]; no individual could be identified, and no contact with participants occurred.
+
+# 3. Results
+
+Between 2010 and 2025, SINAN recorded `r n0(g("^Registros"))` pertussis notifications, of which `r n0(g("^Notificações elegíveis"))` were in children under five years and `r n0(g("^Confirmados$"))` (`r f(100*g("^Confirmados$")/g("^Notificações elegíveis"))`%) were confirmed: `r n0(g("Confirmados lt_6m"))` in infants under 6 months, `r n0(g("Confirmados 6_11m"))` at 6–11 months and `r n0(g("Confirmados 1_4a"))` at 1–4 years (Fig. 1). The population at risk estimated by the cohort-component method was on average `r f(100*(mean(dv$razao_nv_censo[dv$ano == 2022], na.rm = TRUE) - 1), 0)`% higher than the 2022 Census count.
+
+```{r f1, fig.cap = "Fig. 1. Selection of pertussis notifications and confirmed cases in children under five years, Brazil, 2010–2025. SINAN: Notifiable Diseases Information System.", out.width = "85%"}
+knitr::include_graphics(file.path(FIG, "fig1_fluxograma.png"))
+```
+
+## 3.1. Timing, magnitude and location of the increase
+
+Incidence in children under five years was `r f(taxa_de_ref)` cases per 100,000 child-years in 2016–2019 and fell to `r f(min(tt$taxa[tt$ano %in% 2020:2023]))`–`r f(max(tt$taxa[tt$ano %in% 2020:2023]))` during the pandemic (Figs. 2 and 3). In 2024, cases remained below expectation from January to June (observed-to-expected ratio `r f(OE("2024-06-01"), 2)` in June) and exceeded it in `r mes_ano(oe_inicio)` (`r f(OE("2024-07-01"), 1)` times the expected number). The excess peaked in `r mes_ano(oe_pico$data)`, at `r f(oe_pico$oe, 1)` times the expected number, and persisted until `r mes_ano(oe_fim)`; from May to December 2025, cases were again below expectation (Fig. S1).
+
+```{r f2, fig.cap = "Fig. 2. Confirmed pertussis cases by month of symptom onset and age group, Brazil, 2016–2025. Bars: recorded cases (red: July 2024 to December 2025, study period). Dashed line and dark grey band: cases expected from 2016–2019 monthly rates applied to the population of each month, with 95% Poisson interval. Grey background: COVID-19 pandemic.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin1_curva_epidemica.png"))
+```
+
+```{r f3, fig.cap = "Fig. 3. Annual pertussis incidence (confirmed cases per 100,000 person-years) by age group (A) and by region in children under five years (B), Brazil, 2010–2025. Denominator estimated from live births minus deaths. Shaded area: preliminary 2025 data.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig2_taxas_anuais.png"))
+```
+
+From July 2024 to December 2025, incidence was `r f(taxa_jan)` cases per 100,000 child-years, `r f(tot$rr, 2)` times that of 2016–2019 (95% CI `r f(tot$lo, 2)`–`r f(tot$hi, 2)`) (Table 1). There were `r n0(obs_tot)` confirmed cases against `r n0(esp_tot)` expected from 2016–2019 rates, that is, `r n0(ex_tot)` excess cases. The second half of 2024 accounted for `r n0(f1$excesso)` of them (`r f(f1$pct_excesso, 0)`%) and the first half of 2025 for `r n0(f2$excesso)` (`r f(f2$pct_excesso, 0)`%); in the second half of 2025 there were `r n0(abs(f3$excesso))` fewer cases than expected. Over the full 2024–2025 biennium, incidence was `r f(tot2425$rr, 2)` times that of 2016–2019 (95% CI `r f(tot2425$lo, 2)`–`r f(tot2425$hi, 2)`); estimates for calendar years and for the second half of 2024 are shown in Table S1.
+
+```{r tab1}
+cel <- function(d, y, anual) { v <- sum(d[[y]]); pa <- sum(d$pop) / 12
+  paste0(f(1e5 * v / pa), " (", n0(if (anual) v / 4 else v), ")") }
+sub_d <- function(d, e, n) switch(e, Total = d, Faixa = d |> filter(faixa == n), Regiao = d |> filter(regiao == n), Criterio = d)
+var_y <- function(e, n) if (e == "Criterio") (if (n == "lab") "casos_lab" else "casos_nlab") else "casos"
+ref_d <- pm |> filter(ano %in% 2016:2019)
+rr_cel <- function(r, l, h) paste0(f(r, 2), " (", f(l, 2), "–", f(h, 2), ")")
+rot <- c(`< 5 anos` = "Total, < 5 years", lt_6m = "< 6 months", `6_11m` = "6–11 months", `1_4a` = "1–4 years",
+         Sul = "South", Sudeste = "Southeast", `Centro-Oeste` = "Center-West", Nordeste = "Northeast", Norte = "North",
+         lab = "Laboratory confirmation", nlab = "Clinical confirmation")
+t1 <- rr |> rowwise() |> mutate(Category = ifelse(nivel %in% names(rot), rot[[nivel]], nivel),
+                   `2016–2019` = cel(sub_d(ref_d, estrato, nivel), var_y(estrato, nivel), TRUE),
+                   `Jul 2024–Dec 2025` = cel(sub_d(na_janela, estrato, nivel), var_y(estrato, nivel), FALSE),
+                   `RR (95% CI)` = rr_cel(rr, lo, hi)) |> ungroup() |>
+  select(Category, `2016–2019`, `Jul 2024–Dec 2025`, `RR (95% CI)`)
+flextable(t1) |>
+  set_caption("Table 1. Pertussis incidence in children under five years from July 2024 to December 2025 and rate ratio (RR) relative to 2016–2019, by age group, region and confirmation criterion, Brazil.") |>
+  hline(i = c(4, 9), border = officer::fp_border(color = "grey60", width = .5)) |>
+  bold(i = 1) |> align(j = -1, align = "center", part = "all") |>
+  fontsize(size = 9, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines("Incidence: confirmed cases per 100,000 person-years; in parentheses, mean annual number of cases in 2016–2019 and total cases in July 2024–December 2025. Denominator estimated from live births minus deaths. RR: negative binomial regression with calendar month as the unit and adjustment for month of the year. 2025 data are preliminary.") |>
+  fontsize(size = 8, part = "footer")
+```
+
+Compared with 2016–2019, incidence in the study period was `r f(R("Faixa","lt_6m")$rr, 2)` times higher in infants under 6 months (95% CI `r f(R("Faixa","lt_6m")$lo, 2)`–`r f(R("Faixa","lt_6m")$hi, 2)`), `r f(R("Faixa","6_11m")$rr, 2)` times at 6–11 months (95% CI `r f(R("Faixa","6_11m")$lo, 2)`–`r f(R("Faixa","6_11m")$hi, 2)`) and `r f(R("Faixa","1_4a")$rr, 2)` times at 1–4 years (95% CI `r f(R("Faixa","1_4a")$lo, 2)`–`r f(R("Faixa","1_4a")$hi, 2)`). Children aged 6 months to 4 years accounted for `r f(D("Faixa","6_11m")$pct_excesso + D("Faixa","1_4a")$pct_excesso, 0)`% of excess cases. The increase was concentrated in the South, with `r n0(D("Regiao","Sul")$excesso)` excess cases (incidence `r f(R("Regiao","Sul")$rr, 1)` times the reference), the Southeast, with `r n0(D("Regiao","Sudeste")$excesso)` (`r f(R("Regiao","Sudeste")$rr, 1)` times), and the Center-West, with `r n0(D("Regiao","Centro-Oeste")$excesso)` (`r f(R("Regiao","Centro-Oeste")$rr, 1)` times). The Northeast had `r n0(abs(D("Regiao","Nordeste")$excesso))` fewer cases than expected (RR `r icx(R("Regiao","Nordeste"))`), and incidence did not change in the North (RR `r icx(R("Regiao","Norte"))`) (Fig. 4).`r if (tem_onda) paste0(" In the South and Southeast, cases first exceeded twice the expected number in ", mes_ano(onda$inicio[onda$regiao == "Sul"]), "; the peaks occurred in ", mes_ano(onda$pico[onda$regiao == "Sul"]), " in the South and ", mes_ano(onda$pico[onda$regiao == "Sudeste"]), " in the Southeast, and only in ", mes_ano(onda$pico[onda$regiao == "Norte"]), " in the North.") else ""`
+
+```{r f4, fig.cap = "Fig. 4. Difference between observed and expected pertussis cases in children under five years from July 2024 to December 2025, by age group, region, half-year and confirmation criterion. Expected: 2016–2019 rates for each age group, region and month applied to the population of each month of the period. In parentheses, percentage of total excess cases.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig4_decomposicao_excesso.png"))
+```
+
+## 3.2. Laboratory confirmation
+
+In 2016–2019, `r f(pct_lab_ref, 0)`% of cases were laboratory-confirmed; from July 2024 to December 2025, `r f(B("jul/2024–dez/2025")$pct_lab, 0)`%. The incidence of laboratory-confirmed cases rose from `r f(B("2016–2019")$tx_lab)` to `r f(B("jul/2024–dez/2025")$tx_lab)` per 100,000, a `r f(lab$rr, 1)`-fold increase (95% CI `r f(lab$lo, 1)`–`r f(lab$hi, 1)`), whereas that of clinically confirmed cases went from `r f(B("2016–2019")$tx_clin)` to `r f(B("jul/2024–dez/2025")$tx_clin)` per 100,000 (RR `r icx(nlab)`). In the second half of 2024, however, clinically confirmed cases also increased (RR `r icx(R("Criterio","nlab",rrjd))`), although much less than laboratory-confirmed cases (RR `r icx(R("Criterio","lab",rrjd))`) (Table S1). Notifications increased from `r f(B("2016–2019")$tx_notif, 0)` to `r f(B("jul/2024–dez/2025")$tx_notif, 0)` per 100,000 children. In the South, notifications rose from `r f(DT("Sul","2016–2019")$tx_notif, 0)` to `r f(DT("Sul","jul/2024–dez/2025")$tx_notif, 0)` per 100,000, and `r f(DT("Sul","jul/2024–dez/2025")$pct_lab, 0)`% of cases were laboratory-confirmed.
+
+## 3.3. Vaccination and the increase in cases
+
+National coverage of the primary DTP series was `r f(mean(cn$dtp[cn$ano %in% 2010:2014]), 0)`% in 2010–2014 and `r f(mean(cn$dtp[cn$ano %in% 2019:2023]), 0)`% in 2019–2023, with a low of `r f(min(cn$dtp[cn$ano %in% 2015:2024]), 0)`% in `r cn$ano[cn$ano >= 2015][which.min(cn$dtp[cn$ano >= 2015])]` and recovery to `r f(cn$dtp[cn$ano == 2024], 0)`% in 2024. Maternal Tdap coverage was `r f(mean(cn$dtpa[cn$ano %in% 2023:2024]), 0)`% in 2023–2024. In the median municipality, DTP coverage fell by `r f(abs(cr$mediana_delta), 0)` pp between the two periods, and `r f(cr$mediana_naovac, 0)`% of children born in 2019–2023 did not complete the primary series.
+
+Across states, the increase was not related to the decline in coverage (ρ = `r f(uf$rho_delta[uf$grupo == "6m_4a"], 2)`; p `r pv(uf$p_delta[uf$grupo == "6m_4a"])`) (Fig. 5A). Across municipalities nationwide, the increase was smaller where more children were unvaccinated (RR `r icx(nv_d)` per 10 pp), because the epidemic was concentrated in the South and Southeast, regions with historically higher coverage (Fig. 5B).
+
+```{r f5, fig.cap = "Fig. 5. Vaccination coverage and the increase in pertussis from July 2024 to December 2025, comparing different regions. A: rate ratio (RR) of the period relative to 2016–2019 in children aged 6 months to 4 years and change in DTP coverage between 2010–2014 and 2019–2023, by state. B: RR of the period in each category of municipal exposure, comparing municipalities nationwide without regard to region (Poisson regression with municipality fixed effects; 95% confidence intervals). T1, T2 and T3: tertiles of lowest, intermediate and highest proportion of unvaccinated children in the 2019–2023 cohorts and, for maternal Tdap, of lowest, intermediate and highest coverage in 2023–2024, weighted by live births so that each includes about one third of children. Below each category, cut-off points and number of municipalities. pp: percentage points.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig5_cobertura_excesso.png"))
+```
+
+Comparing municipalities within the same region, the increase in infants under 6 months was `r pct(tp_e$irr)`% larger per 10 pp lower maternal Tdap coverage (RR `r icx(tp_e)`), with similar estimates for laboratory-confirmed cases (RR `r icx(SL(EXT))`), for the full 2024–2025 biennium (RR `r icx(tp_2425)`) and for the windows that included the second half of 2024 (Table S2). In children aged 6 months to 4 years, the increase was `r pct(nv_e$irr)`% larger per 10 pp more unvaccinated children, with a confidence interval including no association (RR `r icx(nv_e)`; full 2024–2025 biennium, RR `r icx(nv_2425)`), and was not associated with the decline in DTP coverage (RR `r icx(dl_e)`) (Table 2). The association with unvaccinated children was clearer for laboratory-confirmed cases (RR `r icx(SL(EXN))`) and in the second half of 2024 (RR `r icx(nv_jd)`), the first phase of the wave, and absent in 2025 (RR `r icx(nv25)`) (Table S2). In direct comparisons of rates, the increase was larger in municipalities with intermediate or high proportions of unvaccinated children in the Southeast and Center-West, but not in the South, and incidence barely changed in the North and Northeast (Fig. 6).
+
+```{r tab2}
+lin <- function(x, d = 2) if (is.null(x) || !nrow(x)) "—" else paste0(f(x$irr, d), " (", f(x$lo, d), "–", f(x$hi, d), ")")
+rot_e <- c("6m_4a|Não vacinados 2019–2023" = "6 months–4 years: +10 pp unvaccinated (DTP, 2019–2023 cohorts)",
+           "6m_4a|Variação da DTP" = "6 months–4 years: 10-pp decline in DTP coverage (2010–2014 to 2019–2023)",
+           "lt_6m|dTpa 2023–2024" = "< 6 months: 10 pp lower maternal Tdap coverage (2023–2024)")
+t2 <- purrr::map_dfr(names(rot_e), function(k) {
+  gr <- sub("\\|.*", "", k); e <- sub(".*\\|", "", k)
+  tibble(`Age group and exposure` = rot_e[[k]],
+         `All municipalities` = lin(M(gr, e, "d_continua")),
+         `Same region (main)` = lin(M(gr, e, "e_continua_regiao_ano")),
+         `Laboratory-confirmed cases only` = if (tem_sl) lin(SL(e)) else "—")
+})
+flextable(t2) |> set_caption("Table 2. Vaccination and the increase in pertussis from July 2024 to December 2025: rate ratio of the increase per 10 percentage points of exposure, by type of comparison between municipalities.") |> fontsize(size = 8, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines("RR (95% CI): how many times larger the increase in cases between 2016–2019 and July 2024–December 2025 was in municipalities with 10 percentage points (pp) more unvaccinated children, more decline in DTP coverage or fewer pregnant women vaccinated with Tdap. Poisson regression with municipality and period fixed effects (all municipalities) or municipality and region × period fixed effects (same region), population offset and standard errors clustered by municipality.") |>
+  fontsize(size = 8, part = "footer")
+```
+
+```{r f6, fig.cap = "Fig. 6. Difference in pertussis incidence between July 2024–December 2025 and 2016–2019 (cases per 100,000 person-years) in children aged 6 months to 4 years, by municipal tertile of unvaccinated children in the 2019–2023 cohorts and region. Tertiles weighted by live births, each including about one third of children; the legend shows cut-off points and number of municipalities. Bars: 95% confidence intervals. The relevant comparison is between tertiles within each region.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin3_dif_incidencia_nao_vacinados.png"))
+```
+
+`r if (tem_atr) paste0("Had all municipalities vaccinated at least 80% of pregnant women with Tdap, about ", n0(AT("lt_6m")$evitaveis), " (95% CI ", n0(AT("lt_6m")$evit_lo), "–", n0(AT("lt_6m")$evit_hi), ") of the ", n0(AT("lt_6m")$casos_2024), " cases in infants under 6 months in the period (", f(AT("lt_6m")$pct_casos, 0), "%) would have been prevented. With the proportion of unvaccinated children at its 2010–2014 level, about ", n0(AT("6m_4a")$evitaveis), " of the ", n0(AT("6m_4a")$casos_2024), " cases in children aged 6 months to 4 years (", f(AT("6m_4a")$pct_casos, 0), "%) would have been prevented (95% CI ", n0(AT("6m_4a")$evit_lo), " to ", n0(AT("6m_4a")$evit_hi), ") (Fig. 7).") else ""`
+
+```{r f7, eval = tem_atr, fig.cap = "Fig. 7. Proportion of confirmed pertussis cases from July 2024 to December 2025 that could have been prevented with higher vaccination coverage. Children aged 6 months to 4 years: scenario with the proportion of unvaccinated children equal to that of 2010–2014. Infants under 6 months: scenario with maternal Tdap coverage of at least 80% in all municipalities. Estimates from the model comparing municipalities within the same region; bars: 95% confidence intervals.", out.width = "95%"}
+knitr::include_graphics(file.path(FIG, "clin8_fracao_atribuivel.png"))
+```
+
+`r if (tem_sub) "## 3.4. Lower detection in the North and Northeast" else ""`
+
+`r if (tem_sub) paste0("Between 2016–2019 and July 2024–December 2025, the notification rate went from ", f(DT("Norte","2016–2019")$tx_notif, 0), " to ", f(DT("Norte","jul/2024–dez/2025")$tx_notif, 0), " per 100,000 children in the North and from ", f(DT("Nordeste","2016–2019")$tx_notif, 0), " to ", f(DT("Nordeste","jul/2024–dez/2025")$tx_notif, 0), " in the Northeast, whereas it more than quadrupled in the South. For notification to return to its pre-pandemic level, cases in the Northeast would have to be multiplied by ", f(SK(C_INV,"Nordeste")$k, 1), ", and the region would still have fewer cases than expected (observed-to-expected ratio ", f(SK(C_INV,"Nordeste")$rr, 2), "). Only in the extreme scenario, in which notification would change as in the South and Southeast (factors of ", f(SK(C_SSE,"Norte")$k, 1), " in the North and ", f(SK(C_SSE,"Nordeste")$k, 1), " in the Northeast), would both regions show an increase. Nationally, excess cases would go from ", n0(SK("Sem correção","Brasil")$excesso), " to ", n0(SK(C_SSE,"Brasil")$excesso), " in the extreme scenario. In the nationwide comparison, the inverse association with unvaccinated children (RR ", icx(SA("Sem correção","Todos os municípios")), ") was attenuated by the correction (RR ", icx(SA(C_SSE,"Todos os municípios")), " in the extreme scenario), whereas the within-region estimate did not change (RR ", icx(SA(C_SSE,"Mesma região")), ") (Fig. S7).") else ""`
+
+`r if (tem_aps) "## 3.5. Primary health care" else ""`
+
+`r if (tem_aps) paste0("In ", ar$anos, ", FHS coverage was high in most municipalities: median ", f(ar$mediana, 0), "%, with ", f(ar$pct_ge80, 0), "% of municipalities at 80% or more. The ", f(ar$pct_lt50, 0), "% of municipalities with coverage below 50% were mostly large urban centers", if (tem_apsp) paste0(", accounting for ", f(ap_lt50$pct_nv, 0), "% of the country's live births and ", ap_lt50$cap, " of the 27 state capitals") else "", ".", if (tem_ec) paste0(" In 2019–2023, DTP coverage was ", f(EC("Brasil","≥ 80%")$dtp_pan, 0), "% in municipalities with FHS coverage of at least 80% and ", f(EC("Brasil","< 50%")$dtp_pan, 0), "% in those with FHS coverage below 50%. Within regions, each 10 pp of FHS coverage corresponded to ", f(EV("dtp_pan")$b, 1), " pp higher DTP coverage (95% CI ", f(EV("dtp_pan")$lo, 1), "–", f(EV("dtp_pan")$hi, 1), "), ", f(abs(EV("nao_vac")$b), 1), " pp fewer unvaccinated children (95% CI ", f(abs(EV("nao_vac")$hi), 1), "–", f(abs(EV("nao_vac")$lo), 1), ") and ", f(EV("dtpa_2324")$b, 1), " pp higher maternal Tdap coverage (95% CI ", f(EV("dtpa_2324")$lo, 1), "–", f(EV("dtpa_2324")$hi, 1), "). Before the decline in coverage, in 2010–2014, this difference was ", f(EV("dtp_pre")$b, 1), " pp.") else "") else ""`
+
+`r if (tem_aps) paste0("The increase associated with each 10 pp of unvaccinated children did not vary with FHS coverage (interaction RR ", icx(int_nv), "; p ", pv(int_nv$p), "), nor did that associated with the decline in DTP coverage (RR ", icx(int_dl), "; p ", pv(int_dl$p), ") or with maternal Tdap (RR ", icx(int_tp), "; p ", pv(int_tp$p), "). Over the whole period, the increase in municipalities with FHS coverage below 50% was similar to that in municipalities with at least 80% (RR ", icx(AI("< 50%")), "; p ", pv(AI("< 50%")$p), "); in the second half of 2024 it was ", pct(AIJ("jul_dez_2024", "< 50%")$irr), "% larger (RR ", icx(AIJ("jul_dez_2024", "< 50%")), "; p ", pv(AIJ("jul_dez_2024", "< 50%")$p), ") and in 2025, ", pct(AIJ("ano_2025", "< 50%")$irr), "% smaller (RR ", icx(AIJ("ano_2025", "< 50%")), "; p ", pv(AIJ("ano_2025", "< 50%")$p), ").", if (tem_med) paste0(" In the decomposition of the FHS effect, expanding coverage from 50% to 100% would reduce cases by ", f(100 * (1 - MD("indireto")$irr), 0), "% by keeping more children vaccinated, with an interval including no effect (RR ", icx(MD("indireto")), "), and the effect through other pathways was imprecise (RR ", icx(MD("direto")), ") (Fig. 8).") else "") else ""`
+
+```{r f8, eval = tem_aps && tem_med, fig.cap = "Fig. 8. Effect of Family Health Strategy (FHS) coverage on the increase in pertussis from July 2024 to December 2025 in children aged 6 months to 4 years, separated into the part mediated by vaccination (indirect) and the part through other pathways (direct). a: difference in the proportion of unvaccinated children associated with 50 percentage points (pp) more FHS coverage (linear regression weighted by live births, adjusted for region). b: rate ratio (RR) of the increase per 10 pp more unvaccinated children. c': direct effect; c: total effect. Poisson models with municipality and region × period fixed effects; confidence intervals (CI) from municipality-clustered bootstrap.", out.width = "90%"}
+knitr::include_graphics(file.path(FIG, "clin7_mediacao_esf.png"))
+```
+
+# 4. Discussion
+
+The pertussis resurgence in children under five years in Brazil began in July 2024, produced excess cases until April 2025 and predominated in children aged 6 months to 4 years, in the South, Southeast and Center-West and among laboratory-confirmed cases. Within each region, municipalities with fewer pregnant women vaccinated with Tdap had larger increases among infants, in all windows that included the early phase of the wave. The association with unvaccinated children was evident in the first phase of the wave and faded as circulation declined in 2025, when accumulated susceptibility no longer turns into cases. The FHS was associated with higher vaccination coverage without modifying the effect of non-vaccination. Together, the results indicate that the resurgence had nationwide determinants, to which declining coverage added a share of preventable cases.
+
+The increase was concentrated in the South and Southeast, regions with historically higher coverage and greater diagnostic capacity [10,12,33,34]. In the nationwide comparison, this concentration produced an inverse association between unvaccinated children and the increase (RR `r icx(nv_d)` per 10 pp), an effect of aggregating regions with different epidemic dynamics rather than of protection conferred by low coverage [35]. Within regions, municipalities exposed to the same wave with more unvaccinated children had larger increases in the first phase of the wave, an association that weakened over the full period and disappeared in 2025. The first-phase result agrees with individual and spatial studies: children aged 3–36 months with three or four overdue doses had an 18- to 28-fold higher risk of pertussis than those vaccinated on time [36], and during the 2010 California epidemic incidence was 20% higher in clusters with more non-medical vaccine exemptions [37]. The attenuation in 2025 is compatible with depletion of susceptible children in the municipalities most affected in 2024 and with transmission shifting to other municipalities [38]; moreover, some children aged 6 months to 4 years in 2025 were born after 2023, outside the cohorts used to measure exposure.
+
+In contrast, a transmission model reproduced the post-pandemic resurgence in England without attributing a relevant role to transient reductions in coverage [8], and countries without important declines in coverage also had intense waves [5,39]. These studies address the determinants of the occurrence of the wave, whereas the within-region analysis addresses its relative intensity across municipalities: declining coverage does not explain the occurrence of the epidemic, but was associated with more cases where it was steeper, especially early on. `r if (tem_atr) paste0('The fraction of cases preventable by restoring childhood coverage was ', f(AT("6m_4a")$pct_casos, 0), '% among children aged 6 months to 4 years, with a wide confidence interval, lower than the 36% attributed to undervaccination in a case-control study in the United States [36]. This discrepancy is compatible with the aggregation bias inherent to ecological designs, which attenuates individual-level contrasts [35], and with non-differential error in coverage, which biases estimates toward the null.') else ''`
+
+The most likely common determinants are the accumulation of children without immunity during the pandemic and waning protection after acellular vaccines [4,9,40,41]. With virtually no circulation between 2020 and 2023, natural boosting of immunity through exposure was lacking [9], and the risk of pertussis increases each year after the last acellular dose: by about 42% per year after the fifth dose in children in California [40], with a mean duration of protection of about three years in a meta-analysis [41]. In a survey of 11 countries, most had higher incidence in 2024 than at pre-pandemic peaks, with a rising proportion of cases in school-aged children and adolescents and stable or falling incidence in infants [5], a pattern similar to that observed here and described in countries of different income levels [39]. In Brazil, the largest increase occurred at 1–4 years (RR `r icx(R("Faixa","1_4a"))`), an age with more social contacts [42], and the smallest in infants (RR `r icx(R("Faixa","lt_6m"))`), who are usually infected by older household contacts [43]. Pathogen changes are another possible explanation: in China, the resurgence followed the spread of a macrolide-resistant lineage [5,44], and pertactin-deficient strains, with a possible selective advantage in populations vaccinated with acellular vaccines, already circulated before the pandemic [5,45]. The lack of systematic genomic surveillance of *B. pertussis* in Brazil precludes assessing this hypothesis.
+
+The increase was restricted to laboratory-confirmed cases. The expansion of PCR converts into laboratory-confirmed cases part of what was previously confirmed clinically or discarded [12,34], and serosurveys indicate that the true burden of disease in Brazil exceeds that notified [46]. In the second half of 2024, however, clinically confirmed cases also increased (RR `r icx(R("Criterio","nlab",rrjd))`); in countries that adopted multiplex respiratory panels during the pandemic, diagnostic change did not account for the magnitude of the increases [5]; and in this study, associations with vaccination were stronger among laboratory-confirmed cases, making it unlikely that diagnostic expansion alone explains the wave.`r if (tem_sub) ' Correcting for lower detection in the North and Northeast attenuated the inverse nationwide association without changing the within-region estimate, and the Northeast remained below expectation even with notification corrected to its pre-pandemic level.' else ''` Detection depends on clinical suspicion, which is lower in vaccinated children and adolescents, in whom the disease may be milder and without the inspiratory whoop, and in infants, who may present with apnea and little cough [47], and on timely access to PCR, whose sensitivity decreases as the disease progresses [34]. Regional differences in these conditions may have contributed to lower notification in the North and Northeast, without explaining the regional distribution of the wave.
+
+In municipalities with more pregnant women vaccinated with Tdap, infants under 6 months had smaller increases, consistently across case definitions and analysis windows, and their incidence fell below the reference in 2025 (RR `r icx(R("Faixa","lt_6m",rr25))`). Transplacental antibody transfer protects infants before the primary series is complete, with high effectiveness in studies in Brazil and England [48,49]; in the English program, effectiveness against laboratory-confirmed disease remained above 90% in the three years after its introduction, and effectiveness against death was estimated at 95% [50]. The stability of infant incidence during the international resurgence has also been attributed to maternal vaccination [5,50]. Because infants account for most hospitalizations, severe disease and deaths [1,2], vaccinating all pregnant women is the measure with the greatest clinical impact.
+
+`r if (tem_aps) paste0("In municipalities with higher FHS coverage, DTP coverage was higher: each 10 pp of FHS coverage corresponded to ", f(EV("dtp_pan")$b, 1), " pp more DTP coverage in 2019–2023, compared with ", f(EV("dtp_pre")$b, 1), " pp before the decline in coverage, suggesting that the FHS buffered the decline [14,17], although FHS coverage does not always ensure that vaccination targets are met [18]. Unlike in COVID-19 vaccination, in which primary health care reduced inequalities in access [16], the FHS did not modify the effect of non-vaccination: the increase associated with unvaccinated children was the same with high or low FHS coverage. For COVID-19 vaccination, primary health care determined access to the vaccine [16], whereas in a pertussis epidemic the risk in each municipality depends on the immunity already accumulated in children, which the FHS influences before, not during, the wave [38]. The reversal of the contrast between municipalities with low and high FHS coverage, with a larger increase in those with low coverage in the second half of 2024 (RR ", icx(AIJ("jul_dez_2024", "< 50%")), ") and a smaller one in 2025 (RR ", icx(AIJ("ano_2025", "< 50%")), "), is compatible with a wave that reached large urban centers, where FHS coverage is lower, before the interior, a hypothesis these data cannot confirm.") else ""`
+
+In clinical practice, pertussis should be considered in older children and adolescents with prolonged or paroxysmal cough, even if vaccinated, and in infants with apnea or cough followed by vomiting [47]. Early laboratory confirmation by PCR allows treatment with a macrolide and chemoprophylaxis of contacts, particularly infants in the household and pregnant women in the third trimester, the groups at highest risk of severe complications [34,47]. Vaccinating all pregnant women with Tdap and restoring childhood coverage are the measures with the greatest potential to attenuate the next wave [48–50], and primary health care is the most direct means of achieving them [14,16]. Because vaccination explained only part of the increase, these measures will reduce but not prevent new waves. Studies with individual data linking cases and vaccination status, evaluation of booster doses in adolescents and adults [41,46] and genomic surveillance of circulating strains [44,45] are needed to clarify what this study could not measure.
+
+The strengths of this study include its national scope, monthly populations at risk estimated from live births, which follow the decline in births without relying on intercensal projections, the use of confirmed cases separated by confirmation criterion, comparisons of each municipality with itself and with others in the same region, and sensitivity and supplementary analyses. The start of the period was identified in the data, which tends to inflate the rate ratio of the resurgence; over the full 2024–2025 biennium, whose delimitation does not depend on the course of the epidemic, the ratio was lower (RR `r f(tot2425$rr, 2)`; 95% CI `r f(tot2425$lo, 2)`–`r f(tot2425$hi, 2)`), but the associations with vaccination were virtually identical to those of the main analysis (Tables S1 and S2). Case recording depends on clinical suspicion and access to testing; if, within a region, municipalities that vaccinate more also tested more, the association with non-vaccination would be underestimated, and the correction for under-detection, based on the notification rate, which also reflects true incidence, should be read as a sensitivity analysis. Administrative coverage data contain errors in dose recording and in the estimation of the target population, which tend to attenuate associations, and since 2024 coverage has been calculated per vaccinated individual rather than per dose [26], which reduces the comparability of Tdap coverage between 2023 and 2024.
+
+The estimated population does not account for migration and exceeded the 2022 Census count, which lowers rates; because the models compare each municipality with itself, a proportional error constant over time is absorbed by the municipality fixed effects. These effects control for time-invariant characteristics, but not for changes between periods, such as urbanization and access to services, which would overestimate the association if coverage had fallen more where these changes favored transmission; the decomposition of the FHS effect also assumes no unmeasured confounding between vaccination coverage and cases. As an ecological study, the results refer to municipalities, not individuals, and do not show that the children who became ill were the unvaccinated ones [35]. Multiple comparisons by age group, region, period and FHS coverage call for caution in interpreting secondary findings. Finally, the study describes a single wave, vaccination of adolescents and adults, a source of transmission to children, was not assessed, and 2025 data are preliminary.
+
+# 5. Conclusions
+
+Pertussis in children under five years increased again in Brazil from July 2024, with excess cases until April 2025, mainly in older children and in the South and Southeast, accompanied by a large expansion of laboratory confirmation. Within each region, maternal Tdap vaccination was consistently associated with protection of infants, and municipalities with more unvaccinated children had more cases in the first phase of the wave. Declining coverage explained a small but preventable share of the increase, and primary health care helped keep more children vaccinated. Vaccinating all pregnant women, restoring coverage of the childhood series and standardizing laboratory confirmation are priorities to reduce future waves.
+
+# CRediT authorship contribution statement
+
+[To be completed by the authors, using the CRediT roles: Conceptualization; Data curation; Formal analysis; Funding acquisition; Investigation; Methodology; Project administration; Resources; Software; Supervision; Validation; Visualization; Writing – original draft; Writing – review and editing.]
+
+# Declaration of competing interest
+
+The authors declare that they have no known competing financial interests or personal relationships that could have appeared to influence the work reported in this paper. [Confirm.]
+
+# Funding
+
+This research did not receive any specific grant from funding agencies in the public, commercial, or not-for-profit sectors. [Confirm or replace with the funding sources.]
+
+# Data availability
+
+All data are publicly available from the Brazilian Ministry of Health (DATASUS, SINAN, National Immunization Program and e-Gestor Atenção Básica). The code that downloads and processes the data and reproduces all analyses, figures and tables is available at https://github.com/mobrant94/pertussis.
+
+# Declaration of generative AI and AI-assisted technologies in the manuscript preparation process
+
+During the preparation of this work the authors used Claude (Anthropic) to assist with code review, language editing and translation into English. After using this tool, the authors reviewed and edited the content as needed and take full responsibility for the content of the published article. [Confirm or adapt.]
+
+# Acknowledgements
+
+[Optional.]
+
+All authors attest they meet the ICMJE criteria for authorship.
+
+# References
+
+[1] Guo S, Zhu Y, Guo Q, Wan C. Severe pertussis in infants: a scoping review. Ann Med 2024;56:2352606. https://doi.org/10.1080/07853890.2024.2352606.
+
+[2] De Barros ENC, Nunes AA, Abreu ADJLD, Furtado BE, Cintra O, Cintra MA, et al. Pertussis epidemiological pattern and disease burden in Brazil: an analysis of national public health surveillance data. Hum Vaccin Immunother 2020;16:61-9. https://doi.org/10.1080/21645515.2019.1634991.
+
+[3] Cherry JD. Epidemic pertussis in 2012: the resurgence of a vaccine-preventable disease. N Engl J Med 2012;367:785-7. https://doi.org/10.1056/NEJMp1209051.
+
+[4] Esposito S, Stefanelli P, Fry NK, Fedele G, He Q, Paterson P, et al. Pertussis prevention: reasons for resurgence, and differences in the current acellular pertussis vaccines. Front Immunol 2019;10:1344. https://doi.org/10.3389/fimmu.2019.01344.
+
+[5] Gorringe A, Cavell B, Beard F, Tsukada K, Otsuka N, Fu P, et al. Global incidence of pertussis after the COVID-19 pandemic. JAMA Netw Open 2025;8:e2545963. https://doi.org/10.1001/jamanetworkopen.2025.45963.
+
+[6] Pan American Health Organization. Epidemiological alert: pertussis (whooping cough) in the Region of the Americas, 22 July 2024. Washington (DC): PAHO/WHO; 2024.
+
+[7] Sansone NMS, Boschiero MN, Marson FAL. The 2024 resurgence of Bordetella pertussis in Brazil and a decade-long epidemiological overview. Front Public Health 2025;13:1549735. https://doi.org/10.3389/fpubh.2025.1549735.
+
+[8] Choi YH, van Leeuwen E, Miller E. Exploring the cause of the pertussis resurgence in England following the COVID-19 pandemic: a mathematical modelling study. BMC Infect Dis 2026;26:369. https://doi.org/10.1186/s12879-026-12521-5.
+
+[9] Cohen R, Ashman M, Taha MK, Varon E, Angoulvant F, Levy C, et al. Pediatric Infectious Disease Group (GPIP) position paper on the immune debt of the COVID-19 pandemic in childhood, how can we fill the immunity gap? Infect Dis Now 2021;51:418-23. https://doi.org/10.1016/j.idnow.2021.05.004.
+
+[10] Domingues CMAS, Teixeira AMS, Moraes JC. Vaccination coverage in children in the period before and during the COVID-19 pandemic in Brazil: a time series analysis and literature review. J Pediatr (Rio J) 2023;99:S12-21. https://doi.org/10.1016/j.jped.2022.11.004.
+
+[11] Saavedra RC, Carvalho-Sauer R, Paixao ES, Ichihara MYT, Costa MCN, Teixeira MG. Is Brazil reversing the decline in childhood immunization coverage in the post-COVID-19 era? An interrupted time series analysis. Vaccines (Basel) 2025;13:527. https://doi.org/10.3390/vaccines13050527.
+
+[12] Fernandes EG, Sartori AMC, de Soárez PC, Carvalhanas TRMP, Rodrigues M, Novaes HMD. Challenges of interpreting epidemiologic surveillance pertussis data with changing diagnostic and immunization practices: the case of the state of São Paulo, Brazil. BMC Infect Dis 2018;18:126. https://doi.org/10.1186/s12879-018-3004-1.
+
+[13] Machado LZ, Marcon CEM. Incidence of pertussis in children under 1 year of age and its relationship with maternal vaccination in Brazil, 2008–2018 [in Portuguese]. Epidemiol Serv Saude 2022;31:e2021625. https://doi.org/10.1590/S1679-49742022000100029.
+
+[14] Macinko J, Harris MJ. Brazil's Family Health Strategy — delivering community-based primary care in a universal health system. N Engl J Med 2015;372:2177-81. https://doi.org/10.1056/NEJMp1501140.
+
+[15] Aquino R, de Oliveira NF, Barreto ML. Impact of the Family Health Program on infant mortality in Brazilian municipalities. Am J Public Health 2009;99:87-93. https://doi.org/10.2105/AJPH.2007.127480.
+
+[16] Bastos LSL, Aguilar S, Rache B, Maçaira P, Baião F, Cerbino-Neto J, et al. Primary healthcare protects vulnerable populations from inequity in COVID-19 vaccination: an ecological analysis of nationwide data from Brazil. Lancet Reg Health Am 2022;14:100335. https://doi.org/10.1016/j.lana.2022.100335.
+
+[17] Holanda WTG, Oliveira SB, Sanchez MN. Differential aspects of access to and quality of primary health care in achieving influenza vaccination coverage [in Portuguese]. Cien Saude Colet 2022;27:1679-94. https://doi.org/10.1590/1413-81232022274.03472021.
+
+[18] Vieira ML, Soares SR, Santos LB, Moreira FS, Linch GFC, Paz AA. Pentavalent vaccine coverage and the Family Health Strategy [in Portuguese]. Rev Enferm UFSM 2021;11:e16. https://doi.org/10.5902/2179769243442.
+
+[19] Benchimol EI, Smeeth L, Guttmann A, Harron K, Moher D, Petersen I, et al. The REporting of studies Conducted using Observational Routinely-collected health Data (RECORD) statement. PLoS Med 2015;12:e1001885. https://doi.org/10.1371/journal.pmed.1001885.
+
+[20] Ministry of Health (Brazil). DATASUS. Notifiable diseases, 2007 onwards (SINAN), https://datasus.saude.gov.br/acesso-a-informacao/doencas-e-agravos-de-notificacao-de-2007-em-diante-sinan/; 2026 [accessed 7 November 2026].
+
+[21] Ministry of Health (Brazil). DATASUS. TabNet: vital statistics, https://datasus.saude.gov.br/informacoes-de-saude-tabnet/; 2026 [accessed 7 November 2026].
+
+[22] Siqueira RP. datasus: an interface to DATASUS public health data [software]. R package; 2026. https://CRAN.R-project.org/package=datasus [accessed 7 November 2026].
+
+[23] Ministry of Health (Brazil). DATASUS. Immunizations: coverage, Brazil, http://tabnet.datasus.gov.br/cgi/dhdat.exe?bd_pni/cpnibr.def; 2026 [accessed 7 November 2026].
+
+[24] Ministry of Health (Brazil). Primary Health Care Secretariat. e-Gestor Atenção Básica: primary care coverage, https://egestorab.saude.gov.br/; 2026 [accessed 7 November 2026].
+
+[25] Preston SH, Heuveline P, Guillot M. Demography: measuring and modeling population processes. Malden (MA): Blackwell Publishers; 2001.
+
+[26] Ministry of Health (Brazil). National Immunization Program Department. Technical Note No. 90/2025-DPNI/SVSA/MS: update on vaccination coverage rules for the national schedule from 2024 [in Portuguese], https://www.gov.br/saude/pt-br/centrais-de-conteudo/publicacoes/notas-tecnicas/2025/nota-tecnica-no-90-2025-dpni-svsa-ms.pdf; 2025 [accessed 7 November 2026].
+
+[27] Bergé L. Efficient estimation of maximum likelihood models with multiple fixed-effects: the R package FENmlm. CREA Discussion Paper 2018-13. Luxembourg: University of Luxembourg; 2018.
+
+[28] Steenland K, Armstrong B. An overview of methods for calculating the burden of disease due to specific risk factors. Epidemiology 2006;17:512-9.
+
+[29] Fox MP, MacLehose RF, Lash TL. Applying quantitative bias analysis to epidemiologic data. 2nd ed. Cham: Springer; 2021.
+
+[30] VanderWeele TJ. Explanation in causal inference: methods for mediation and interaction. New York: Oxford University Press; 2015.
+
+[31] R Core Team. R: a language and environment for statistical computing [software]. Vienna: R Foundation for Statistical Computing; 2025. https://www.R-project.org/.
+
+[32] National Health Council (Brazil). Resolution No. 510, of 7 April 2016 [in Portuguese]. Diário Oficial da União 2016 May 24; Section 1:44-6.
+
+[33] Costa EP, Nascimento LFC. Childhood vaccination coverage and socioeconomic inequalities in the Northern region of Brazil. Rev Bras Epidemiol 2026;29:e260027. https://doi.org/10.1590/1980-549720260027.
+
+[34] van der Zee A, Schellekens JFP, Mooi FR. Laboratory diagnosis of pertussis. Clin Microbiol Rev 2015;28:1005-26. https://doi.org/10.1128/CMR.00031-15.
+
+[35] Greenland S, Morgenstern H. Ecological bias, confounding, and effect modification. Int J Epidemiol 1989;18:269-74. https://doi.org/10.1093/ije/18.1.269.
+
+[36] Glanz JM, Narwaney KJ, Newcomer SR, Daley MF, Hambidge SJ, Rowhani-Rahbar A, et al. Association between undervaccination with diphtheria, tetanus toxoids, and acellular pertussis (DTaP) vaccine and risk of pertussis infection in children 3 to 36 months of age. JAMA Pediatr 2013;167:1060-4. https://doi.org/10.1001/jamapediatrics.2013.2353.
+
+[37] Atwell JE, Van Otterloo J, Zipprich J, Winter K, Harriman K, Salmon DA, et al. Nonmedical vaccine exemptions and pertussis in California, 2010. Pediatrics 2013;132:624-30. https://doi.org/10.1542/peds.2013-0878.
+
+[38] Fine P, Eames K, Heymann DL. "Herd immunity": a rough guide. Clin Infect Dis 2011;52:911-6. https://doi.org/10.1093/cid/cir007.
+
+[39] Bricks LF, Vargas-Zambrano JC, Macina D. Epidemiology of pertussis after the COVID-19 pandemic: analysis of the factors involved in the resurgence of the disease in high-, middle-, and low-income countries. Vaccines (Basel) 2024;12:1346. https://doi.org/10.3390/vaccines12121346.
+
+[40] Klein NP, Bartlett J, Rowhani-Rahbar A, Fireman B, Baxter R. Waning protection after fifth dose of acellular pertussis vaccine in children. N Engl J Med 2012;367:1012-9. https://doi.org/10.1056/NEJMoa1200850.
+
+[41] McGirr A, Fisman DN. Duration of pertussis immunity after DTaP immunization: a meta-analysis. Pediatrics 2015;135:331-43.
+
+[42] Mossong J, Hens N, Jit M, Beutels P, Auranen K, Mikolajczyk R, et al. Social contacts and mixing patterns relevant to the spread of infectious diseases. PLoS Med 2008;5:e74. https://doi.org/10.1371/journal.pmed.0050074.
+
+[43] Skoff TH, Kenyon C, Cocoros N, Liko J, Miller L, Kudish K, et al. Sources of infant pertussis infection in the United States. Pediatrics 2015;136:635-41. https://doi.org/10.1542/peds.2015-1120.
+
+[44] Fu P, Zhou J, Yang C, Nijiati Y, Zhou L, Yan G, et al. Molecular evolution and increasing macrolide resistance of Bordetella pertussis, Shanghai, China, 2016–2022. Emerg Infect Dis 2024;30(1). https://doi.org/10.3201/eid3001.221588.
+
+[45] Martin SW, Pawloski L, Williams M, Weening K, DeBolt C, Qin X, et al. Pertactin-negative Bordetella pertussis strains: evidence for a possible selective advantage. Clin Infect Dis 2015;60:223-7. https://doi.org/10.1093/cid/ciu788.
+
+[46] Silva EP, Trentini M, Rodriguez D, Kanno AI, Gomes FMS, Valente MH, et al. Seroprevalence study reveals pertussis underreporting in Brazil and calls for adolescent/young adult boosting: mouse model demonstrates immunity restoration. Front Immunol 2024;15:1472157. https://doi.org/10.3389/fimmu.2024.1472157.
+
+[47] Tiwari T, Murphy TV, Moran J. Recommended antimicrobial agents for the treatment and postexposure prophylaxis of pertussis: 2005 CDC guidelines. MMWR Recomm Rep 2005;54:1-16.
+
+[48] Fernandes EG, Sato APS, Vaz-de-Lima LRA, Rodrigues M, Leite D, de Brito CA, et al. The effectiveness of maternal pertussis vaccination in protecting newborn infants in Brazil: a case-control study. Vaccine 2019;37:5481-4. https://doi.org/10.1016/j.vaccine.2019.03.049.
+
+[49] Amirthalingam G, Andrews N, Campbell H, Ribeiro S, Kara E, Donegan K, et al. Effectiveness of maternal pertussis vaccination in England: an observational study. Lancet 2014;384:1521-8. https://doi.org/10.1016/S0140-6736(14)60686-3.
+
+[50] Amirthalingam G, Campbell H, Ribeiro S, Fry NK, Ramsay M, Miller E, et al. Sustained effectiveness of the maternal pertussis immunization program in England 3 years following introduction. Clin Infect Dis 2016;63:S236-43. https://doi.org/10.1093/cid/ciw559.

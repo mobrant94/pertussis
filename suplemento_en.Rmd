@@ -1,0 +1,199 @@
+---
+output:
+  word_document:
+    reference_docx: modelo_artigo.docx
+lang: en-US
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+suppressPackageStartupMessages({ library(dplyr); library(tidyr); library(flextable); library(stringr) })
+SAI <- "saidas"; FIG <- "figuras_en"
+rd <- function(f, ...) read.csv(file.path(SAI, f), encoding = "UTF-8", ...)
+ex <- function(f) file.exists(file.path(SAI, f))
+f <- function(x, d = 1) { x <- as.numeric(x); ifelse(is.na(x), "—", formatC(x, format = "f", digits = d, big.mark = ",", decimal.mark = ".")) }
+n0 <- function(x) formatC(round(as.numeric(x)), format = "d", big.mark = ",")
+ic <- function(r, l, h, d = 2) paste0(f(r, d), "; 95% CI ", f(l, d), "–", f(h, d))
+icx <- function(x, d = 2) ic(if ("irr" %in% names(x)) x$irr else x$rr, x$lo, x$hi, d)
+pv <- function(p) if (is.na(p)) "NA" else if (p < 0.001) "< 0.001" else paste0("= ", f(p, 3))
+sig <- function(l, h) isTRUE(l > 1 | h < 1)
+pct <- function(r) f(100 * abs(r - 1), 0)
+meses <- month.name
+mes_ano <- function(d) { d <- as.Date(d); if (is.na(d)) "—" else paste(meses[as.integer(format(d, "%m"))], format(d, "%Y")) }
+
+fl <- rd("fluxograma.csv"); N <- setNames(fl$n, fl$etapa); g <- function(p) N[grep(p, names(N))][1]
+conf <- rd("confirmacao_por_ano.csv")
+tt <- rd("taxa_anual_total.csv"); tf <- rd("taxa_anual_faixa.csv"); tr <- rd("taxa_anual_regiao.csv")
+JP <- "principal"; INI <- as.Date("2024-07-01"); FIM <- as.Date("2025-12-01")
+tc <- rd("tercis_resumo.csv"); TC <- function(e, k) tc[tc$exposicao == e, ][grep(k, tc$categoria[tc$exposicao == e], fixed = TRUE), ]
+nesf <- if (file.exists("dados/processados/aps_mun.rds")) table(as.character(readRDS("dados/processados/aps_mun.rds")$cat_aps)) else NULL
+rr <- rd("rr_principal_vs_ref.csv"); rrm <- rd("rr_mensal_2024.csv"); dc <- rd("decomposicao_excesso_principal.csv")
+RRJ <- function(j) rd(paste0("rr_", j, "_vs_ref.csv"))
+# painel mensal: observado/esperado mês a mês e taxas no período
+pm <- readRDS("dados/processados/painel_mensal.rds")
+tx_ref <- pm |> filter(ano %in% 2016:2019) |> group_by(faixa, regiao, mes) |> summarise(tx = sum(casos) / sum(pop), .groups = "drop")
+oe_mes <- pm |> filter(ano %in% 2024:2025) |> left_join(tx_ref, by = c("faixa", "regiao", "mes")) |>
+  group_by(data) |> summarise(obs = sum(casos), esp = sum(tx * pop), .groups = "drop") |> mutate(oe = obs / esp)
+oe_inicio <- min(oe_mes$data[oe_mes$oe > 1]); oe_fim <- max(oe_mes$data[oe_mes$oe > 1 & oe_mes$data < as.Date("2025-07-01")])
+oe_pico <- oe_mes |> slice_max(oe, n = 1)
+OE <- function(d) oe_mes$oe[oe_mes$data == as.Date(d)]
+na_janela <- pm |> filter(data >= INI, data <= FIM)
+n_meses <- length(unique(na_janela$data))
+cn <- rd("cobertura_nacional_ponderada.csv"); cr <- rd("cobertura_resumo_municipal.csv")
+uf <- rd("uf_correlacoes.csv"); dv <- rd("denominador_vs_censo.csv")
+md_all <- rd("modelos_cobertura_excesso.csv"); md <- md_all |> filter(ano_alvo == JP)
+R <- function(e, n, x = rr) x |> filter(estrato == e, nivel == n)
+D <- function(e, n, x = dc) x |> filter(estrato == e, nivel == n)
+M <- function(gr, ex, mo, te = NULL, x = md) { y <- x |> filter(grupo == gr, exposicao == ex, modelo == mo); if (!is.null(te)) y <- y |> filter(termo == te); y }
+EXD <- "Variação da DTP"; EXN <- "Não vacinados 2019–2023"; EXT <- "dTpa 2023–2024"
+
+# magnitude e distribuição
+tot <- R("Total", "< 5 anos"); ex_tot <- sum(dc$excesso[dc$estrato == "Regiao"])
+esp_tot <- sum(dc$esp[dc$estrato == "Regiao"]); obs_tot <- sum(dc$obs[dc$estrato == "Regiao"])
+f1 <- D("Semestre", "s2_2024"); f2 <- D("Semestre", "s1_2025"); f3 <- D("Semestre", "s2_2025"); lab <- R("Criterio", "lab"); nlab <- R("Criterio", "nlab")
+pct_lab_ref <- with(conf |> filter(ano %in% 2016:2019), 100 * sum(lab) / sum(conf))
+inv <- rrm |> filter(faixa == "total", lo > 1) |> pull(mes)
+mx <- rrm |> filter(faixa == "total") |> slice_max(rr, n = 1)
+taxa <- function(a) tt$taxa[tt$ano == a]
+taxa_jan <- 1e5 * sum(na_janela$casos) / (sum(na_janela$pop) / 12)
+taxa_de_ref <- with(tt |> filter(ano %in% 2016:2019), 1e5 * sum(casos) / sum(pa))
+pico_hist <- tt |> filter(ano < 2020) |> slice_max(taxa, n = 1)
+reg_menos <- dc |> filter(estrato == "Regiao", excesso < 0) |> pull(nivel)
+
+# 2025
+tem25 <- TRUE
+rr24a <- RRJ("ano_2024"); rr25 <- RRJ("ano_2025"); rrjd <- RRJ("jul_dez_2024")
+rr2425 <- RRJ("ano_2024_2025"); tot2425 <- R("Total", "< 5 anos", rr2425)
+tot24a <- R("Total", "< 5 anos", rr24a); tot25 <- R("Total", "< 5 anos", rr25); totjd <- R("Total", "< 5 anos", rrjd)
+MJ <- function(j, gr, e, mo = "e_continua_regiao_ano") M(gr, e, mo, x = md_all |> filter(ano_alvo == j))
+
+# detecção e momento da onda (06c)
+tem_det <- ex("deteccao_por_regiao.csv")
+if (tem_det) { det <- rd("deteccao_por_regiao.csv"); DT <- function(r, p) det |> filter(regiao == r, periodo == p)
+  det_br <- det |> group_by(periodo) |> summarise(across(c(notif, conf, lab, pa), sum)) |>
+    mutate(tx_notif = 1e5 * notif / pa, pct_conf = 100 * conf / notif, pct_lab = 100 * lab / conf, tx_clin = 1e5 * (conf - lab) / pa, tx_lab = 1e5 * lab / pa)
+  B <- function(p) det_br |> filter(periodo == p) }
+tem_onda <- ex("momento_onda_regiao.csv"); if (tem_onda) onda <- rd("momento_onda_regiao.csv")
+# ESF < 50%: participação nos nascidos vivos e capitais
+tem_apsp <- file.exists("dados/processados/aps_mun.rds") && file.exists("dados/processados/cobertura_mun.rds")
+if (tem_apsp) {
+  CAPS <- c("110020","130260","120040","150140","160030","140010","172100","211130","221100","230440","240810","250750","261160",
+            "270430","280030","292740","310620","320530","330455","355030","410690","420540","431490","500270","510340","520870","530010")
+  ap <- readRDS("dados/processados/aps_mun.rds") |> inner_join(readRDS("dados/processados/cobertura_mun.rds") |> select(code_muni, nv_1923), by = "code_muni")
+  ap_lt50 <- ap |> summarise(pct_nv = 100 * sum(nv_1923[cat_aps == "< 50%"], na.rm = TRUE) / sum(nv_1923, na.rm = TRUE),
+                             cap = sum(cat_aps == "< 50%" & substr(as.character(code_muni), 1, 6) %in% CAPS))
+}
+# subdetecção no Norte e no Nordeste (06d)
+tem_sub <- tem_det && ex("subdeteccao_magnitude.csv") && ex("subdeteccao_modelos.csv")
+if (tem_sub) { smg <- rd("subdeteccao_magnitude.csv"); smd <- rd("subdeteccao_modelos.csv")
+  C_INV <- "Investigação no nível de 2016–2019"; C_SSE <- "Mesma variação do Sul e do Sudeste"
+  SK <- function(cen, r) smg |> filter(ano == 9999, cenario == cen, regiao == r) |> transmute(k, excesso, rr = oe, lo, hi)
+  SA <- function(cen, comp, e = "Não vacinados 2019–2023") smd |> filter(ano_alvo == 9999, cenario == cen, comparacao == comp, exposicao == e) }
+
+# cobertura e excesso: estimativa principal = efeitos fixos de município e de região x ano
+dl_e <- M("6m_4a", EXD, "e_continua_regiao_ano"); nv_e <- M("6m_4a", EXN, "e_continua_regiao_ano"); tp_e <- M("lt_6m", EXT, "e_continua_regiao_ano")
+dl_d <- M("6m_4a", EXD, "d_continua"); nv_d <- M("6m_4a", EXN, "d_continua")
+dl_a <- M("6m_4a", EXD, "a_rr_categoria"); nv_a <- M("6m_4a", EXN, "a_rr_categoria"); tp_a <- M("lt_6m", EXT, "a_rr_categoria")
+cat_txt <- function(x) paste0(tolower(x$termo), " (RR ", icx(x), ")", collapse = "; ")
+nv_assoc <- sig(nv_e$lo, nv_e$hi) && nv_e$irr > 1; dl_assoc <- sig(dl_e$lo, dl_e$hi) && dl_e$irr > 1
+tp_assoc <- sig(tp_e$lo, tp_e$hi) && tp_e$irr > 1
+inverso_nacional <- isTRUE(nv_d$hi < 1) | isTRUE(dl_d$hi < 1)
+nv_jd <- MJ("jul_dez_2024", "6m_4a", EXN); tp_jd <- MJ("jul_dez_2024", "lt_6m", EXT)
+nv_2425 <- MJ("ano_2024_2025", "6m_4a", EXN); tp_2425 <- MJ("ano_2024_2025", "lt_6m", EXT)
+nv_24 <- MJ("ano_2024", "6m_4a", EXN); tp_24 <- MJ("ano_2024", "lt_6m", EXT)
+nv25 <- MJ("ano_2025", "6m_4a", EXN); dl25 <- MJ("ano_2025", "6m_4a", EXD); tp25 <- MJ("ano_2025", "lt_6m", EXT)
+tem_sl <- ex("sensibilidade_laboratorio.csv")
+if (tem_sl) { sl <- rd("sensibilidade_laboratorio.csv") |> filter(desfecho == "Confirmados por laboratório")
+  SL <- function(e) sl |> filter(exposicao == e) }
+tem_atr <- ex("casos_atribuiveis_2024.csv")
+if (tem_atr) { atr <- rd("casos_atribuiveis_2024.csv"); AT <- function(gr) atr |> filter(grupo == gr) }
+
+# atenção primária
+tem_aps <- ex("modelos_aps.csv") && ex("aps_resumo.csv")
+if (tem_aps) {
+  ar <- rd("aps_resumo.csv"); ma_all <- rd("modelos_aps.csv"); ma <- ma_all |> filter(ano_alvo == JP)
+  A <- function(gr, e, mo, te = NULL) { y <- ma |> filter(grupo == gr, exposicao == e, modelo == mo); if (!is.null(te)) y <- y |> filter(termo == te); y }
+  int_dl <- A("6m_4a", EXD, "g_interacao", "interacao"); int_nv <- A("6m_4a", EXN, "g_interacao", "interacao")
+  int_tp <- A("lt_6m", EXT, "g_interacao", "interacao"); int_lab <- A("6m_4a", EXN, "g_interacao_lab", "interacao")
+  cond <- function(a) A("6m_4a", EXN, "g_efeito_condicional", paste0("APS ", a, "%"))
+  aps_i <- A("6m_4a", EXD, "i_aps"); AI <- function(k) aps_i |> filter(termo == k)
+  modifica <- any(c(int_dl$p, int_nv$p, int_tp$p) < 0.05, na.rm = TRUE)
+  AIJ <- function(j, k) ma_all |> filter(ano_alvo == j, grupo == "6m_4a", exposicao == EXD, modelo == "i_aps", termo == k)
+  tem_ec <- ex("esf_cobertura_vacinal.csv") && ex("esf_cobertura_por_categoria.csv")
+  if (tem_ec) { ecv <- rd("esf_cobertura_vacinal.csv"); ecc <- rd("esf_cobertura_por_categoria.csv")
+    EV <- function(y) ecv |> filter(desfecho == y) |> slice(1); EC <- function(r, k) ecc |> filter(regiao == r, cat_aps == k) }
+  tem_med <- ex("mediacao_esf.csv"); if (tem_med) { med <- rd("mediacao_esf.csv"); MD <- function(e) med |> filter(efeito == e) |> transmute(irr, lo = irr_lo, hi = irr_hi) }
+} else { tem_ec <- tem_med <- FALSE }
+```
+
+
+# Supplementary material
+
+**Pertussis resurgence in children under five years in Brazil, 2024–2025: magnitude, laboratory confirmation, vaccination and primary health care**
+
+```{r tabs1}
+JN <- c(principal = "Jul 2024–Dec 2025 (main)", ano_2024_2025 = "2024–2025", jul_dez_2024 = "Jul–Dec 2024", ano_2024 = "Year 2024", ano_2025 = "Year 2025")
+rr_cel <- function(r, l, h) paste0(f(r, 2), " (", f(l, 2), "–", f(h, 2), ")")
+rot <- c(`< 5 anos` = "Total, < 5 years", lt_6m = "< 6 months", `6_11m` = "6–11 months", `1_4a` = "1–4 years",
+         Sul = "South", Sudeste = "Southeast", `Centro-Oeste` = "Center-West", Nordeste = "Northeast", Norte = "North",
+         lab = "Laboratory confirmation", nlab = "Clinical confirmation")
+ts1 <- purrr::map_dfr(names(JN), function(j) RRJ(j) |> mutate(janela = JN[[j]], v = rr_cel(rr, lo, hi))) |>
+  mutate(Category = ifelse(nivel %in% names(rot), rot[nivel], nivel)) |>
+  select(Category, janela, v) |> tidyr::pivot_wider(names_from = janela, values_from = v)
+flextable(ts1) |>
+  set_caption("Table S1. Pertussis rate ratio (RR) in children under five years relative to the same months of 2016–2019, by analysis period, Brazil.") |>
+  hline(i = c(4, 9), border = officer::fp_border(color = "grey60", width = .5)) |>
+  bold(i = 1) |> align(j = -1, align = "center", part = "all") |>
+  fontsize(size = 8, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines("RR (95% CI): negative binomial regression with calendar month as the unit and adjustment for month of the year; each period is compared with the same months of 2016–2019. 2025 data are preliminary.") |>
+  fontsize(size = 8, part = "footer")
+```
+
+```{r tabs2}
+lin <- function(x, d = 2) if (is.null(x) || !nrow(x)) "—" else paste0(f(x$irr, d), " (", f(x$lo, d), "–", f(x$hi, d), ")")
+ex3 <- c("6m_4a|Não vacinados 2019–2023" = "6 months–4 years: unvaccinated",
+         "6m_4a|Variação da DTP" = "6 months–4 years: decline in DTP",
+         "lt_6m|dTpa 2023–2024" = "< 6 months: lower maternal Tdap")
+ts2 <- purrr::map_dfr(names(ex3), function(k) {
+  gr <- sub("\\|.*", "", k); e <- sub(".*\\|", "", k)
+  tibble(`Exposure (per 10 pp)` = ex3[[k]],
+         !!!setNames(lapply(names(JN), function(j) lin(MJ(j, gr, e))), JN))
+})
+esf <- function(j) { x <- ma_all |> filter(ano_alvo == j, grupo == "6m_4a", exposicao == EXD, modelo == "i_aps", termo == "< 50%"); lin(x) }
+ts2 <- bind_rows(ts2, tibble(`Exposure (per 10 pp)` = "6 months–4 years: FHS < 50% vs ≥ 80% (RR)",
+                             !!!setNames(lapply(names(JN), esf), JN)))
+flextable(ts2) |>
+  set_caption("Table S2. Vaccination, Family Health Strategy (FHS) coverage and the increase in pertussis, comparing municipalities within the same region, by analysis period.") |>
+  align(j = -1, align = "center", part = "all") |>
+  fontsize(size = 8, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines("RR (95% CI): how many times larger the increase in cases relative to 2016–2019 was per 10 percentage points (pp) of exposure; in the last row, ratio between the increase in municipalities with FHS coverage < 50% and ≥ 80%. Poisson regression with municipality and region × period fixed effects, population offset and standard errors clustered by municipality.") |>
+  fontsize(size = 8, part = "footer")
+```
+
+```{r s1, fig.cap = "Fig. S1. Monthly pertussis rate ratio in 2024 and 2025 (preliminary data) relative to 2016–2019, in children under five years and by age group. The ratio exceeded 1 in July 2024, the start of the epidemic circulation that delimits the analysis period. Negative binomial regression with an interaction between period and month; bars: 95% confidence intervals.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig3_rr_mensal_2024.png"))
+```
+
+```{r s2, fig.cap = "Fig. S2. Pertussis incidence (cases per 100,000 person-years) by age group in 2016–2019 (annual mean), July 2024 to December 2025 (analysis period) and calendar years 2024 and 2025 (preliminary data). Bars: exact 95% confidence intervals.", out.width = "80%"}
+knitr::include_graphics(file.path(FIG, "clin2_incidencia_faixa.png"))
+```
+
+```{r s3, fig.cap = "Fig. S3. Difference in pertussis incidence between July 2024–December 2025 and 2016–2019 (cases per 100,000 person-years) in infants under 6 months, by municipal tertile of maternal Tdap coverage in 2023–2024 (weighted by live births) and region. The legend shows cut-off points and number of municipalities. Bars: 95% confidence intervals.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin5_dif_incidencia_lactentes_dtpa.png"))
+```
+
+```{r s4, eval = tem_aps, fig.cap = "Fig. S4. Mean DTP coverage in 2019–2023, weighted by live births, by Family Health Strategy (FHS) coverage in 2017–2020, in Brazil and by region. The legend shows the number of municipalities in each FHS category. Bars: 95% confidence intervals.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin6_esf_cobertura_dtp.png"))
+```
+
+```{r s5, eval = tem_aps, fig.cap = "Fig. S5. Difference in pertussis incidence between July 2024–December 2025 and 2016–2019 (cases per 100,000 person-years) in children aged 6 months to 4 years, by Family Health Strategy (FHS) coverage in 2017–2020 and region. The legend shows the number of municipalities in each FHS category. Bars: 95% confidence intervals.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin4_dif_incidencia_esf.png"))
+```
+
+```{r s6, eval = tem_aps, fig.cap = "Fig. S6. Did Family Health Strategy (FHS) coverage modify the effect of non-vaccination on the increase in cases from July 2024 to December 2025? A: rate ratio of the increase per 10 percentage points (pp) of unvaccinated children, decline in DTP coverage or pregnant women without Tdap, in each FHS category (n: number of municipalities), with the p value for interaction. B: increase in each combination of change in DTP coverage and FHS coverage in children aged 6 months to 4 years, relative to municipalities without a decline in DTP and with FHS coverage ≥ 80%. Poisson regression with municipality and region × period fixed effects.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig6_aps_modificacao.png"))
+```
+
+```{r s7, eval = tem_sub, fig.cap = "Fig. S7. Sensitivity analysis for lower pertussis detection in the North and Northeast. Cases in these regions from July 2024 to December 2025 were multiplied by fixed factors and by empirical factors based on the notification rate of suspected cases. A: ratio of observed to expected cases from 2016–2019 rates in Brazil, the Northeast and the North. B: rate ratio of the increase in children aged 6 months to 4 years per 10 percentage points (pp) of unvaccinated children, comparing municipalities nationwide or within the same region. Bars: 95% confidence intervals.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin9_subdeteccao.png"))
+```
