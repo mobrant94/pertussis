@@ -167,13 +167,57 @@ O papel da atenção primária foi avaliado de três formas. A primeira foi um t
 
 Entre 2010 e `r if (tem25) "2025" else "2024"`, o SINAN registrou `r n0(g("^Registros"))` notificações de coqueluche. Dessas, `r n0(g("^Notificações elegíveis"))` eram de crianças menores de 5 anos e `r n0(g("^Confirmados$"))` (`r f(100*g("^Confirmados$")/g("^Notificações elegíveis"))`%) foram confirmadas: `r n0(g("Confirmados lt_6m"))` em menores de 6 meses, `r n0(g("Confirmados 6_11m"))` entre 6 e 11 meses e `r n0(g("Confirmados 1_4a"))` entre 1 e 4 anos (Figura 1). A população em risco estimada pelo método de componentes de coorte foi, em média, `r f(100*(mean(dv$razao_nv_censo[dv$ano == 2022], na.rm = TRUE) - 1), 0)`% maior que a contada no Censo de 2022.
 
+```{r f1, fig.cap = "Figura 1. Fluxograma de seleção das notificações e dos casos confirmados de coqueluche em menores de 5 anos, Brasil.", out.width = "85%"}
+knitr::include_graphics(file.path(FIG, "fig1_fluxograma.png"))
+```
+
 ## Tamanho, momento e local do aumento
 
 A incidência em menores de 5 anos foi de `r f(taxa_de_ref)` casos por 100.000 crianças por ano em 2016–2019, caiu para `r f(min(tt$taxa[tt$ano %in% 2020:2023]))`–`r f(max(tt$taxa[tt$ano %in% 2020:2023]))` durante a pandemia e subiu para `r f(taxa(2024))` em 2024 (Figuras 2 e 3; Tabela 1). O valor de 2024 foi `r f(tot$rr, 2)` vezes o de 2016–2019, isto é, `r pct(tot$rr)`% maior (IC95% `r f(tot$lo, 2)`–`r f(tot$hi, 2)`), mas ficou abaixo do pico da série, de `r f(pico_hist$taxa)` casos por 100.000 em `r pico_hist$ano`. Em 2024 foram confirmados `r n0(obs_tot)` casos, quando o esperado pelas taxas de 2016–2019 era `r n0(esp_tot)`, ou seja, `r n0(ex_tot)` casos a mais.
 
+```{r f2, fig.cap = "Figura 2. Casos confirmados de coqueluche por mês de início dos sintomas, por faixa etária, Brasil, 2016–2025. Barras: casos registrados (vermelho: 2024–2025). Linha tracejada e faixa cinza-escura: casos esperados pelas taxas mensais de 2016–2019 aplicadas à população de cada mês, com intervalo de 95% de Poisson. Fundo cinza: pandemia de COVID-19.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin1_curva_epidemica.png"))
+```
+
+```{r f3, fig.cap = "Figura 3. Incidência anual de coqueluche (casos confirmados por 100.000 pessoas-ano) por faixa etária (A) e por região em menores de 5 anos (B), Brasil, 2010–2025. Denominador estimado por nascidos vivos menos óbitos. Área sombreada: dados preliminares de 2025.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig2_taxas_anuais.png"))
+```
+
+```{r tab1}
+tf2 <- tf |> mutate(nivel = faixa); tr2 <- tr |> mutate(nivel = regiao)
+taxa_de <- function(e, n, anos) {
+  d <- switch(e, Total = tt, Faixa = tf2 |> filter(nivel == n), Regiao = tr2 |> filter(nivel == n), Criterio = tt)
+  d <- d |> filter(ano %in% anos)
+  y <- if (e == "Criterio") { if (n == "lab") d$casos_lab else d$casos - d$casos_lab } else d$casos
+  c(taxa = 1e5 * sum(y) / sum(d$pa), casos = sum(y) / length(anos))
+}
+cel <- function(e, n, anos) { v <- taxa_de(e, n, anos); paste0(f(v[["taxa"]]), " (", n0(v[["casos"]]), ")") }
+rr_cel <- function(r, l, h) paste0(f(r, 2), " (", f(l, 2), "–", f(h, 2), ")")
+rot <- c(`< 5 anos` = "Total, < 5 anos", lt_6m = "< 6 meses", `6_11m` = "6–11 meses", `1_4a` = "1–4 anos",
+         lab = "Confirmação laboratorial", nlab = "Confirmação clínica")
+t1 <- rr |> mutate(Categoria = ifelse(nivel %in% names(rot), rot[nivel], nivel),
+                   `2016–2019` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2016:2019)),
+                   `2024` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2024)),
+                   `RR 2024` = rr_cel(rr, lo, hi))
+if (tem25) t1 <- t1 |> mutate(`2025*` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2025)), `RR 2025*` = rr_cel(rr25$rr, rr25$lo, rr25$hi))
+t1 <- t1 |> select(Categoria, `2016–2019`, `2024`, any_of("2025*"), `RR 2024`, any_of("RR 2025*"))
+flextable(t1) |>
+  set_caption("Tabela 1. Incidência de coqueluche em menores de 5 anos e razão de taxas (RR) em relação a 2016–2019, por faixa etária, região e critério de confirmação, Brasil.") |>
+  add_header_row(values = c("", "Incidência por 100.000 (casos/ano)", "RR (IC95%)"), colwidths = c(1, ncol(t1) - 1 - (1 + tem25), 1 + tem25)) |>
+  hline(i = c(4, 9), border = officer::fp_border(color = "grey60", width = .5)) |>
+  bold(i = 1) |> align(j = -1, align = "center", part = "all") |>
+  fontsize(size = 9, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines(paste0("Incidência: casos confirmados por 100.000 pessoas-ano; entre parênteses, média anual de casos. Denominador estimado por nascidos vivos menos óbitos. RR: regressão binomial negativa com o ano-mês como unidade e ajuste para mês.", if (tem25) " *Dados de 2025 preliminares." else "")) |>
+  fontsize(size = 8, part = "footer")
+```
+
 O aumento foi maior quanto mais velha a criança. Em relação a 2016–2019, a incidência de 2024 foi `r f(R("Faixa","lt_6m")$rr, 2)` vezes maior em menores de 6 meses (IC95% `r f(R("Faixa","lt_6m")$lo, 2)`–`r f(R("Faixa","lt_6m")$hi, 2)`), `r f(R("Faixa","6_11m")$rr, 2)` vezes entre 6 e 11 meses (IC95% `r f(R("Faixa","6_11m")$lo, 2)`–`r f(R("Faixa","6_11m")$hi, 2)`) e `r f(R("Faixa","1_4a")$rr, 2)` vezes entre 1 e 4 anos (IC95% `r f(R("Faixa","1_4a")$lo, 2)`–`r f(R("Faixa","1_4a")$hi, 2)`). As crianças de 6 meses a 4 anos responderam por `r f(D("Faixa","6_11m")$pct_excesso + D("Faixa","1_4a")$pct_excesso, 0)`% dos casos a mais.
 
 O aumento começou no meio do ano. A incidência mensal de 2024 superou a de 2016–2019 `r if (length(inv)) paste0("de ", meses[min(inv)], " a ", meses[max(inv)]) else "em nenhum mês"`, e em `r meses[mx$mes]` chegou a `r f(mx$rr, 1)` vezes a de referência (IC95% `r f(mx$lo, 1)`–`r f(mx$hi, 1)`). O aumento concentrou-se no Sul, com `r n0(D("Regiao","Sul")$excesso)` casos a mais (incidência `r f(R("Regiao","Sul")$rr, 1)` vezes a de referência), no Sudeste, com `r n0(D("Regiao","Sudeste")$excesso)` (`r f(R("Regiao","Sudeste")$rr, 1)` vezes), e no Centro-Oeste, com `r n0(D("Regiao","Centro-Oeste")$excesso)` (`r f(R("Regiao","Centro-Oeste")$rr, 1)` vezes). `r if (length(reg_menos)) paste0("No ", paste(reg_menos, collapse = " e no "), ", houve menos casos que o esperado")  else ""` (Figura 4).`r if (tem_onda) paste0(" No Sul e no Sudeste, os casos passaram a superar o dobro do esperado em ", mes_ano(onda$inicio[onda$regiao == "Sul"]), "; os picos ocorreram em ", mes_ano(onda$pico[onda$regiao == "Sul"]), " no Sul e em ", mes_ano(onda$pico[onda$regiao == "Sudeste"]), " no Sudeste. No Norte, o pico veio apenas em ", mes_ano(onda$pico[onda$regiao == "Norte"]), ".") else ""`
+
+```{r f4, fig.cap = "Figura 4. Casos de coqueluche a mais (ou a menos) que o esperado em menores de 5 anos em 2024, por faixa etária, região, semestre e critério de confirmação. Esperados: taxas de 2016–2019 aplicadas à população de 2024. Entre parênteses, percentual do total de casos a mais.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig4_decomposicao_excesso.png"))
+```
 
 ## Confirmação laboratorial
 
@@ -185,9 +229,39 @@ A cobertura nacional da vacina DTP no esquema primário foi de `r f(mean(cn$dtp[
 
 Comparar regiões diferentes levou a uma conclusão enganosa. Entre os estados, o aumento de casos em 2024 não teve relação com a queda da cobertura (ρ = `r f(uf$rho_delta[uf$grupo == "6m_4a"], 2)`; p `r pv(uf$p_delta[uf$grupo == "6m_4a"])`) (Figura 5A). Entre municípios de todo o país, o aumento foi até menor onde havia mais crianças não vacinadas (RR `r icx(nv_d)` a cada 10 pontos percentuais), porque a epidemia se concentrou no Sul e no Sudeste, regiões que historicamente vacinam mais (Figura 5B).
 
+```{r f5, fig.cap = "Figura 5. Cobertura vacinal e aumento de casos de coqueluche em 2024, comparando regiões diferentes. A: razão de taxas de 2024 em relação a 2016–2019 em crianças de 6 meses a 4 anos e variação da cobertura de DTP entre 2010–2014 e 2019–2023, por unidade da federação. B: razão de taxas de 2024 em cada categoria de exposição municipal, comparando municípios de todo o país, sem considerar a região (Poisson com efeitos fixos de município; intervalos de confiança de 95%). T1, T2 e T3: tercis de menor, intermediária e maior proporção de crianças não vacinadas nas coortes de 2019–2023; para a dTpa, tercis de menor, intermediária e maior cobertura em gestantes em 2023–2024. Os tercis foram ponderados pelos nascidos vivos, de modo que cada um reúne cerca de um terço das crianças.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "fig5_cobertura_excesso.png"))
+```
+
 Quando cada município foi comparado apenas com outros da mesma região, atingidos pela onda na mesma época, o resultado teve a direção esperada. Em crianças de 6 meses a 4 anos, o aumento de casos em 2024 foi `r pct(nv_e$irr)`% maior a cada 10 pontos percentuais a mais de crianças não vacinadas (RR `r icx(nv_e)`) e `r pct(dl_e$irr)`% maior a cada 10 pontos percentuais de queda da cobertura de DTP (RR `r icx(dl_e)`). Em menores de 6 meses, o aumento foi `r pct(tp_e$irr)`% maior a cada 10 pontos percentuais a menos de gestantes vacinadas com dTpa (RR `r icx(tp_e)`) (Tabela 2). Na comparação direta das taxas, o aumento no Sudeste e no Centro-Oeste foi maior nos municípios com proporção intermediária ou alta de crianças não vacinadas do que naqueles com proporção baixa. No Sul, o aumento foi alto nos municípios com proporção baixa ou intermediária e menor nos de proporção alta, que são poucos; no Norte e no Nordeste, a incidência praticamente não mudou (Figura 6).`r if (tem_sl) paste0(" Os resultados foram semelhantes considerando apenas os casos confirmados por laboratório (RR ", icx(SL(EXN)), " para crianças não vacinadas e ", icx(SL(EXT)), " para dTpa).") else ""``r if (tem25) paste0(" Em 2025, não houve associação (RR ", icx(nv25), " e ", icx(tp25), ", respectivamente).") else ""`
 
+```{r tab2}
+lin <- function(x, d = 2) if (is.null(x) || !nrow(x)) "—" else paste0(f(x$irr, d), " (", f(x$lo, d), "–", f(x$hi, d), ")")
+rot_e <- c("6m_4a|Não vacinados 2019–2023" = "6 meses a 4 anos — +10 p.p. de não vacinados (DTP, coortes 2019–2023)",
+           "6m_4a|Variação da DTP" = "6 meses a 4 anos — 10 p.p. de queda da cobertura de DTP (2010–2014 a 2019–2023)",
+           "lt_6m|dTpa 2023–2024" = "< 6 meses — 10 p.p. a menos de cobertura de dTpa em gestantes (2023–2024)")
+t2 <- purrr::map_dfr(names(rot_e), function(k) {
+  gr <- sub("\\|.*", "", k); e <- sub(".*\\|", "", k)
+  tibble(`Grupo e exposição` = rot_e[[k]],
+         `Todos os municípios do país` = lin(M(gr, e, "d_continua")),
+         `Municípios da mesma região (principal)` = lin(M(gr, e, "e_continua_regiao_ano")),
+         `Somente casos laboratoriais` = if (tem_sl) lin(SL(e)) else "—",
+         `2025 (preliminar)` = if (tem25) lin(M(gr, e, "e_continua_regiao_ano", x = md_all |> filter(ano_alvo == 2025))) else "—")
+})
+flextable(t2) |> set_caption("Tabela 2. Vacinação e aumento de casos de coqueluche em 2024: quanto o aumento foi maior a cada 10 pontos percentuais de exposição, segundo a forma de comparar os municípios.") |> fontsize(size = 8, part = "all") |> autofit() |> fit_to_width(6.5) |>
+  add_footer_lines("RR (IC95%): quantas vezes o aumento de casos entre 2016–2019 e 2024 foi maior em municípios com 10 pontos percentuais a mais de crianças não vacinadas, de queda da DTP ou de gestantes não vacinadas com dTpa. Regressão de Poisson com efeitos fixos de município e de ano (todos os municípios) ou de município e de região × ano (mesma região), offset populacional e erros-padrão agrupados por município.") |>
+  fontsize(size = 8, part = "footer")
+```
+
+```{r f6, fig.cap = "Figura 6. Diferença de incidência de coqueluche entre 2024 e 2016–2019 (casos por 100.000 pessoas-ano) em crianças de 6 meses a 4 anos, segundo o tercil municipal de crianças não vacinadas nas coortes de 2019–2023, por região. Tercis ponderados pelos nascidos vivos: cada tercil reúne cerca de um terço das crianças do país. Barras: intervalos de confiança de 95%. A comparação relevante é entre os tercis dentro de cada região.", out.width = "100%"}
+knitr::include_graphics(file.path(FIG, "clin3_dif_incidencia_nao_vacinados.png"))
+```
+
 `r if (tem_atr) paste0("Para estimar o peso da vacinação no aumento, calculou-se quantos casos teriam ocorrido com coberturas mais altas. Se a proporção de crianças não vacinadas tivesse se mantido no nível de 2010–2014, cerca de ", n0(AT("6m_4a")$evitaveis), " (IC95% ", n0(AT("6m_4a")$evit_lo), "–", n0(AT("6m_4a")$evit_hi), ") dos ", n0(AT("6m_4a")$casos_2024), " casos de 2024 em crianças de 6 meses a 4 anos não teriam ocorrido, o que corresponde a ", f(AT("6m_4a")$pct_casos, 0), "% desses casos e a ", f(100 * AT("6m_4a")$evitaveis / AT("6m_4a")$excesso_2024, 0), "% dos casos a mais. Se todos os municípios tivessem vacinado pelo menos 80% das gestantes com dTpa, cerca de ", n0(AT("lt_6m")$evitaveis), " (IC95% ", n0(AT("lt_6m")$evit_lo), "–", n0(AT("lt_6m")$evit_hi), ") dos ", n0(AT("lt_6m")$casos_2024), " casos em menores de 6 meses (", f(AT("lt_6m")$pct_casos, 0), "%) teriam sido evitados (Figura 7).") else ""`
+
+```{r f7, eval = tem_atr, fig.cap = "Figura 7. Proporção dos casos confirmados de coqueluche em 2024 que poderiam ter sido evitados com maior vacinação. Crianças de 6 meses a 4 anos: cenário com proporção de não vacinados igual à de 2010–2014. Menores de 6 meses: cenário com cobertura de dTpa em gestantes de pelo menos 80% em todos os municípios. Estimativas do modelo que compara municípios da mesma região; barras: intervalos de confiança de 95%.", out.width = "90%"}
+knitr::include_graphics(file.path(FIG, "clin8_fracao_atribuivel.png"))
+```
 
 `r if (tem_sub) "## Menor detecção no Norte e no Nordeste" else ""`
 
@@ -199,25 +273,31 @@ Quando cada município foi comparado apenas com outros da mesma região, atingid
 
 `r if (tem_aps) paste0("A ESF não atenuou o efeito da falta de vacinação: onde faltou vacina, os casos aumentaram na mesma proporção com ESF alta ou baixa. O aumento associado a cada 10 pontos percentuais de crianças não vacinadas não variou com a cobertura da ESF (interação RR ", icx(int_nv), "; p ", pv(int_nv$p), "), e o mesmo ocorreu com a queda da DTP (RR ", icx(int_dl), "; p ", pv(int_dl$p), ") e com a dTpa (RR ", icx(int_tp), "; p ", pv(int_tp$p), ").", " Em 2024, os municípios com ESF abaixo de 50% tiveram aumento de casos ", pct(AI("< 50%")$irr), "% maior que os de ESF de pelo menos 80% (RR ", icx(AI("< 50%")), "; p ", pv(AI("< 50%")$p), ")", if (tem25 && nrow(ma25)) paste0("; em 2025, ocorreu o inverso (RR ", icx(ma25 |> filter(termo == "< 50%")), "; p ", pv((ma25 |> filter(termo == "< 50%"))$p), ")") else "", ".", if (tem_med) paste0(" Para identificar por qual caminho a ESF atuou, seu efeito foi separado em duas partes: a que ocorre porque mantém mais crianças vacinadas e a que ocorreria por outras vias. Ampliar a cobertura da ESF de 50% para 100% reduziria os casos em ", f(100 * (1 - MD("indireto")$irr), 0), "% pela primeira via (RR ", icx(MD("indireto")), "), sem efeito pela segunda (RR ", icx(MD("direto")), ") (Figura 8).") else "") else ""`
 
+```{r f8, eval = tem_aps && tem_med, fig.cap = "Figura 8. Efeito da cobertura da Estratégia Saúde da Família (ESF) sobre o aumento de casos de coqueluche em 2024 em crianças de 6 meses a 4 anos, separado no que passa pela vacinação (indireto) e no que ocorre por outras vias (direto). a: diferença na proporção de não vacinados associada a 50 pontos percentuais a mais de cobertura da ESF (regressão linear ponderada pelos nascidos vivos, ajustada por região). b: quantas vezes o aumento de casos foi maior a cada 10 pontos percentuais a mais de não vacinados. c': efeito direto; c: efeito total. Modelos de Poisson com efeitos fixos de município e de região × ano; intervalos de confiança por bootstrap agrupado por município.", out.width = "90%"}
+knitr::include_graphics(file.path(FIG, "clin7_mediacao_esf.png"))
+```
+
 `r if (tem25) "## 2025" else ""`
 
 `r if (tem25) paste0("Em 2025, com dados preliminares, a incidência foi de ", f(taxa(2025)), " casos por 100.000, semelhante à de 2016–2019 (RR ", icx(tot25), "). Os casos a mais concentraram-se no primeiro semestre (", n0(s1_25$excesso), " casos), ainda como continuação da onda de 2024, e nas crianças de 1 a 4 anos (incidência ", f(R("Faixa","1_4a", rr25)$rr, 1), " vezes a de referência). Em menores de 6 meses, a incidência ficou ", pct(R("Faixa","lt_6m", rr25)$rr), "% abaixo da de 2016–2019 (RR ", icx(R("Faixa","lt_6m", rr25)), ").") else ""`
 
 # Discussão
 
-Os principais achados deste estudo são três. Em 2024, a incidência de coqueluche em menores de 5 anos no Brasil foi `r f(tot$rr, 1)` vezes a do período anterior à pandemia, com aumento concentrado no segundo semestre, nas crianças de 6 meses a 4 anos e no Sul, no Sudeste e no Centro-Oeste, e restrito aos casos confirmados por laboratório. Dentro de cada região, municípios com mais crianças não vacinadas e com menos gestantes vacinadas com dTpa tiveram aumentos maiores, mas a falta de vacinação respondeu por menos de um terço dos casos acima do esperado. A ESF associou-se a coberturas vacinais mais altas e reduziu os casos apenas por essa via. Em conjunto, os resultados indicam que a ressurgência teve determinantes comuns a todo o país, aos quais a queda das coberturas acrescentou uma parcela de casos evitáveis.
+Em 2024, a incidência de coqueluche em menores de 5 anos no Brasil foi `r f(tot$rr, 1)` vezes a do período anterior à pandemia, com aumento concentrado no segundo semestre, nas crianças de 6 meses a 4 anos e no Sul, no Sudeste e no Centro-Oeste, e restrito aos casos confirmados por laboratório. Dentro de cada região, municípios com mais crianças não vacinadas e com menos gestantes vacinadas com dTpa tiveram aumentos maiores, mas a falta de vacinação respondeu por menos de um terço dos casos acima do esperado. A ESF associou-se a coberturas vacinais mais altas e reduziu os casos por essa via. Em conjunto, os resultados indicam que a ressurgência teve determinantes comuns a todo o país, aos quais a queda das coberturas acrescentou uma parcela de casos evitáveis.
 
-A relação entre vacinação e aumento de casos dependeu da forma de comparar os municípios. Entre estados e entre municípios de todo o país, a falta de vacinação não se associou ao aumento ou associou-se inversamente a ele, porque a epidemia se concentrou no Sul e no Sudeste, regiões com coberturas historicamente mais altas e maior capacidade diagnóstica. Na comparação entre municípios da mesma região, expostos à mesma onda, aqueles com mais crianças sem vacina tiveram mais casos.`r if (tem_sub) ' A correção da menor detecção no Norte e no Nordeste eliminou a associação inversa da comparação nacional sem alterar a estimativa dentro das regiões, o que indica que a inversão decorreu das diferenças entre regiões, e não de um efeito protetor da baixa cobertura.' else ''` Esse resultado concorda com estudos de base individual e espacial: crianças de 3 a 36 meses com três ou quatro doses em atraso tiveram risco de coqueluche 18 a 28 vezes maior que as vacinadas no prazo (36), e, na epidemia da Califórnia de 2010, a incidência foi 20% maior nos aglomerados com mais isenções vacinais não médicas (37). Em sentido oposto, na Inglaterra, um modelo de transmissão reproduziu a ressurgência pós-pandêmica sem atribuir papel relevante às reduções transitórias da cobertura (9), e países sem queda importante das coberturas também registraram ondas intensas (5). As duas evidências não se contradizem. Esses estudos avaliam por que a onda ocorreu, e a análise dentro das regiões avalia onde ela foi mais intensa: a queda das coberturas não explica a ocorrência da epidemia, mas aumentou o número de casos onde ela foi maior. A magnitude foi modesta. `r if (tem_atr) paste0('A falta de vacinação respondeu por ', f(AT("6m_4a")$pct_casos, 0), '% dos casos e por ', f(100 * AT("6m_4a")$evitaveis / AT("6m_4a")$excesso_2024, 0), '% dos casos acima do esperado entre 6 meses e 4 anos, proporção inferior aos 36% atribuídos ao atraso vacinal em estudo de caso-controle norte-americano (36). A diferença é esperada, pois a comparação entre municípios dilui o contraste entre crianças vacinadas e não vacinadas e erros na medida da cobertura tendem a atenuar a associação.') else ''`
+O aumento de casos concentrou-se no Sul e no Sudeste, regiões com coberturas historicamente mais altas e maior capacidade diagnóstica. Na comparação entre municípios da mesma região, expostos à mesma onda, aqueles com mais crianças sem vacina tiveram mais casos.`r if (tem_sub) ' A correção da menor detecção no Norte e no Nordeste eliminou a associação inversa da comparação nacional sem alterar a estimativa dentro das regiões, o que indica que a inversão decorreu das diferenças entre regiões, e não de um efeito protetor da baixa cobertura.' else ''` Esse resultado concorda com estudos de base individual e espacial: crianças de 3 a 36 meses com três ou quatro doses em atraso tiveram risco de coqueluche 18 a 28 vezes maior que as vacinadas no prazo (36), e, na epidemia da Califórnia de 2010, a incidência foi 20% maior nos aglomerados com mais isenções vacinais não médicas (37).
+
+Em sentido oposto, na Inglaterra, um modelo de transmissão reproduziu a ressurgência pós-pandêmica sem atribuir papel relevante às reduções transitórias da cobertura (9), e países sem queda importante das coberturas também registraram ondas intensas (5). Esses estudos avaliam por que a onda ocorreu, e a análise dentro das regiões avalia onde ela foi mais intensa: a queda das coberturas não explica a ocorrência da epidemia, mas aumentou o número de casos onde ela foi maior. `r if (tem_atr) paste0('A falta de vacinação respondeu por ', f(AT("6m_4a")$pct_casos, 0), '% dos casos e por ', f(100 * AT("6m_4a")$evitaveis / AT("6m_4a")$excesso_2024, 0), '% dos casos acima do esperado entre 6 meses e 4 anos, proporção inferior aos 36% atribuídos ao atraso vacinal em estudo de caso-controle norte-americano (36). A diferença é esperada, pois a comparação entre municípios dilui o contraste entre crianças vacinadas e não vacinadas e erros na medida da cobertura tendem a atenuar a associação.') else ''`
 
 Os determinantes comuns mais prováveis são o acúmulo de crianças sem imunidade durante a pandemia e a perda da proteção conferida pelas vacinas acelulares. Com a bactéria praticamente sem circular entre 2020 e 2023, faltou o reforço natural da imunidade provocado pela exposição (10), e a proteção das vacinas acelulares diminui nos anos seguintes ao esquema primário (4). Em levantamento de 11 países, a maioria registrou em 2024 incidência superior à dos picos pré-pandêmicos, com aumento da proporção de casos em escolares e adolescentes e estabilidade ou redução nos lactentes (5), padrão semelhante ao observado aqui e descrito em países de diferentes níveis de renda (30). No Brasil, o maior aumento ocorreu entre 1 e 4 anos, idade com mais contatos sociais (31), e o menor nos lactentes, que costumam ser infectados por contatos domiciliares mais velhos (34). Mudanças no patógeno são outra explicação possível: na China, a ressurgência acompanhou a expansão de uma linhagem resistente a macrolídeos, e cepas deficientes em pertactina já circulavam antes da pandemia em países que usam vacinas acelulares (5). A ausência de vigilância genômica sistemática de *B. pertussis* no Brasil impede avaliar essa hipótese.
 
-Parte do aumento registrado reflete a expansão da confirmação laboratorial. Os casos confirmados por laboratório aumentaram cerca de `r f(lab$rr, 0)` vezes, os confirmados por critério clínico diminuíram, e as regiões com maior aumento foram as que mais notificaram e testaram. A ampliação da reação em cadeia da polimerase converte em casos laboratoriais parte do que antes era confirmado clinicamente ou descartado (13), e inquéritos sorológicos indicam que a carga real da doença no país é maior que a notificada (35). A mudança diagnóstica, porém, não explica sozinha a onda. Nos países que adotaram painéis respiratórios multiplex durante a pandemia, ela não justificou a magnitude dos aumentos (5), e, neste estudo, a associação com a falta de vacinação persistiu quando apenas os casos laboratoriais foram analisados.`r if (tem_sub) ' A menor investigação de suspeitos no Norte e no Nordeste tampouco explica a distribuição regional, pois, mesmo com a notificação corrigida para o nível anterior à pandemia, essas regiões permaneceram abaixo do esperado.' else ''`
+Os casos confirmados por laboratório aumentaram cerca de `r f(lab$rr, 0)` vezes, os confirmados por critério clínico diminuíram, e as regiões com maior aumento foram as que mais notificaram e testaram. A ampliação da reação em cadeia da polimerase converte em casos laboratoriais parte do que antes era confirmado clinicamente ou descartado (13), e inquéritos sorológicos indicam que a carga real da doença no país é maior que a notificada (35). A mudança diagnóstica, porém, não explica sozinha a onda. Nos países que adotaram painéis respiratórios multiplex durante a pandemia, ela não justificou a magnitude dos aumentos (5), e, neste estudo, a associação com a falta de vacinação persistiu quando apenas os casos laboratoriais foram analisados.`r if (tem_sub) ' A menor investigação de suspeitos no Norte e no Nordeste tampouco explica a distribuição regional, pois, mesmo com a notificação corrigida para o nível anterior à pandemia, essas regiões permaneceram abaixo do esperado.' else ''`
 
-Nos lactentes, os resultados reforçam a vacinação das gestantes. Nos municípios com mais gestantes vacinadas com dTpa, os menores de 6 meses tiveram aumento menor, com estimativa semelhante entre os casos laboratoriais, e a incidência nessa faixa voltou a ficar abaixo da de referência em 2025. A transferência transplacentária de anticorpos protege o lactente antes do término do esquema primário, com efetividade elevada em estudos no Brasil e na Inglaterra (32,33), e a estabilidade da incidência em lactentes durante a ressurgência internacional também foi atribuída à vacinação materna (5). Como os lactentes concentram as formas graves e os óbitos (1,2), a vacinação de todas as gestantes é a medida de maior impacto clínico.
+Nos municípios com mais gestantes vacinadas com dTpa, os menores de 6 meses tiveram aumento menor, com estimativa semelhante entre os casos laboratoriais, e a incidência nessa faixa voltou a ficar abaixo da de referência em 2025. A transferência transplacentária de anticorpos protege o lactente antes do término do esquema primário, com efetividade elevada em estudos no Brasil e na Inglaterra (32,33), e a estabilidade da incidência em lactentes durante a ressurgência internacional também foi atribuída à vacinação materna (5). Como os lactentes concentram as formas graves e os óbitos (1,2), a vacinação de todas as gestantes é a medida de maior impacto clínico.
 
-`r if (tem_aps) paste0("A atenção primária contribuiu para preservar a vacinação. Nos municípios com maior cobertura da ESF, a cobertura de DTP foi mais alta e a proporção de não vacinados, menor, e essa diferença, pequena antes da queda das coberturas, ampliou-se durante ela, o que sugere que a ESF amorteceu a queda. O achado é semelhante ao descrito para a vacinação contra a COVID-19, em que a atenção primária reduziu desigualdades de acesso (15). Diferentemente daquele estudo, a ESF não modificou o efeito da falta de vacinação: o aumento de casos associado à proporção de não vacinados foi o mesmo com ESF alta ou baixa. A diferença é plausível, pois, na vacinação contra a COVID-19, a atenção primária determinava o acesso à vacina, enquanto, numa epidemia de coqueluche, o risco de cada município depende da imunidade já acumulada nas crianças, que a ESF influencia antes, e não durante, a onda. O contraste entre municípios com ESF baixa e alta, compatível com o acaso em 2024 e invertida em 2025, pode refletir uma onda que atingiu primeiro os grandes centros urbanos, onde a cobertura da ESF é menor, e depois o interior, hipótese que estes dados não permitem confirmar.") else ""`
+`r if (tem_aps) paste0("Nos municípios com maior cobertura da ESF, a cobertura de DTP foi mais alta e a proporção de não vacinados, menor, e essa diferença, pequena antes da queda das coberturas, ampliou-se durante ela, o que sugere que a ESF amorteceu a queda. O achado é semelhante ao descrito para a vacinação contra a COVID-19, em que a atenção primária reduziu desigualdades de acesso (15). Diferentemente daquele estudo, a ESF não modificou o efeito da falta de vacinação: o aumento de casos associado à proporção de não vacinados foi o mesmo com ESF alta ou baixa. A diferença é plausível, pois, na vacinação contra a COVID-19, a atenção primária determinava o acesso à vacina, enquanto, numa epidemia de coqueluche, o risco de cada município depende da imunidade já acumulada nas crianças, que a ESF influencia antes, e não durante, a onda. O contraste entre municípios com ESF baixa e alta, compatível com o acaso em 2024 e invertida em 2025, pode refletir uma onda que atingiu primeiro os grandes centros urbanos, onde a cobertura da ESF é menor, e depois o interior, hipótese que estes dados não permitem confirmar.") else ""`
 
-Os resultados têm implicações para a prática e para a vigilância. A coqueluche deve ser considerada em crianças maiores com tosse prolongada ou paroxística, mesmo vacinadas, e a confirmação laboratorial precoce permite tratar o caso e instituir quimioprofilaxia nos contatos, sobretudo nos lactentes do domicílio. A recuperação das coberturas infantis e a vacinação de todas as gestantes com dTpa são as medidas com maior potencial para atenuar a próxima onda, e a atenção primária é o meio mais direto de alcançá-las. Como a vacinação explicou apenas parte do aumento, essas medidas reduzem, mas não impedem, novas ondas. Estudos com dados individuais que vinculem casos e situação vacinal, a avaliação do reforço em adolescentes e adultos e a vigilância genômica das cepas circulantes são necessários para esclarecer o que este estudo não pôde medir.
+A coqueluche deve ser considerada em crianças maiores com tosse prolongada ou paroxística, mesmo vacinadas, e a confirmação laboratorial precoce permite tratar o caso e instituir quimioprofilaxia nos contatos, sobretudo nos lactentes do domicílio. A recuperação das coberturas infantis e a vacinação de todas as gestantes com dTpa são as medidas com maior potencial para atenuar a próxima onda, e a atenção primária é o meio mais direto de alcançá-las. Como a vacinação explicou apenas parte do aumento, essas medidas reduzem, mas não impedem, novas ondas. Estudos com dados individuais que vinculem casos e situação vacinal, a avaliação do reforço em adolescentes e adultos e a vigilância genômica das cepas circulantes são necessários para esclarecer o que este estudo não pôde medir.
 
 O estudo tem como pontos fortes a abrangência nacional, a população em risco estimada mês a mês a partir dos nascidos vivos, que acompanha a queda da natalidade sem depender de projeções intercensitárias, o uso exclusivo de casos confirmados com separação por critério de confirmação, a comparação de cada município com ele mesmo ao longo do tempo e com outros da mesma região, as análises de sensibilidade para a detecção e a estimativa dos casos evitáveis. As limitações devem ser consideradas em relação a viés, confundimento e acaso. O registro de casos depende da suspeita clínica e do acesso a exames, que variaram no tempo e entre regiões; se, dentro de uma região, os municípios com melhor estrutura de saúde, que também vacinam mais, testaram mais, a associação com a falta de vacinação estaria subestimada`r if (tem_sub) '. A correção da subdetecção usou a taxa de notificação, que também reflete a incidência real, e por isso foi tratada como análise de sensibilidade' else ''`. As coberturas do sistema de informação contêm erros no registro das doses e na estimativa da população-alvo e não informam se as doses foram aplicadas no prazo; erros desse tipo, sem relação com a ocorrência de casos, tendem a atenuar as associações. A população estimada não considera migração, usa a mortalidade da UF e superou a contada no Censo de 2022, o que reduz as taxas, mas tende a afetar pouco a comparação de cada município com ele mesmo. Quanto ao confundimento, os efeitos fixos de município controlam as características que não mudam no tempo, mas não as que mudaram entre os períodos, como a urbanização, o deslocamento da população e o acesso a serviços; se a cobertura caiu mais onde essas mudanças favoreceram a transmissão, a associação estaria superestimada. A decomposição do efeito da ESF pressupõe ausência de confundimento não medido entre a cobertura vacinal e os casos e deve ser lida como aproximação. Por ser um estudo ecológico, os resultados referem-se a municípios, e não a indivíduos (38): municípios com mais crianças não vacinadas tiveram mais casos, mas não se sabe se as crianças doentes eram as não vacinadas. Quanto ao acaso, as análises por faixa etária, região, mês e cobertura da ESF envolveram múltiplas comparações, e os achados secundários, como a diferença entre municípios com ESF baixa e alta, devem ser interpretados com cautela. Por fim, o estudo descreve uma única onda, e a vacinação de adolescentes e adultos, fonte de transmissão para as crianças, não foi avaliada.`r if (tem25) " Os dados de 2025 são preliminares." else ""`
 
@@ -302,89 +382,6 @@ Em 2024, a coqueluche em menores de 5 anos voltou a aumentar no Brasil, sobretud
 37. Atwell JE, Van Otterloo J, Zipprich J, Winter K, Harriman K, Salmon DA, et al. Nonmedical vaccine exemptions and pertussis in California, 2010. Pediatrics. 2013;132(4):624–30. doi:10.1542/peds.2013-0878
 
 38. Morgenstern H. Ecologic studies in epidemiology: concepts, principles, and methods. Annu Rev Public Health. 1995;16:61–81. doi:10.1146/annurev.pu.16.050195.000425
-
-# Tabelas
-
-```{r tab1}
-tf2 <- tf |> mutate(nivel = faixa); tr2 <- tr |> mutate(nivel = regiao)
-taxa_de <- function(e, n, anos) {
-  d <- switch(e, Total = tt, Faixa = tf2 |> filter(nivel == n), Regiao = tr2 |> filter(nivel == n), Criterio = tt)
-  d <- d |> filter(ano %in% anos)
-  y <- if (e == "Criterio") { if (n == "lab") d$casos_lab else d$casos - d$casos_lab } else d$casos
-  c(taxa = 1e5 * sum(y) / sum(d$pa), casos = sum(y) / length(anos))
-}
-cel <- function(e, n, anos) { v <- taxa_de(e, n, anos); paste0(f(v[["taxa"]]), " (", n0(v[["casos"]]), ")") }
-rr_cel <- function(r, l, h) paste0(f(r, 2), " (", f(l, 2), "–", f(h, 2), ")")
-rot <- c(`< 5 anos` = "Total, < 5 anos", lt_6m = "< 6 meses", `6_11m` = "6–11 meses", `1_4a` = "1–4 anos",
-         lab = "Confirmação laboratorial", nlab = "Confirmação clínica")
-t1 <- rr |> mutate(Categoria = ifelse(nivel %in% names(rot), rot[nivel], nivel),
-                   `2016–2019` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2016:2019)),
-                   `2024` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2024)),
-                   `RR 2024` = rr_cel(rr, lo, hi))
-if (tem25) t1 <- t1 |> mutate(`2025*` = mapply(cel, estrato, nivel, MoreArgs = list(anos = 2025)), `RR 2025*` = rr_cel(rr25$rr, rr25$lo, rr25$hi))
-t1 <- t1 |> select(Categoria, `2016–2019`, `2024`, any_of("2025*"), `RR 2024`, any_of("RR 2025*"))
-flextable(t1) |>
-  set_caption("Tabela 1. Incidência de coqueluche em menores de 5 anos e razão de taxas (RR) em relação a 2016–2019, por faixa etária, região e critério de confirmação, Brasil.") |>
-  add_header_row(values = c("", "Incidência por 100.000 (casos/ano)", "RR (IC95%)"), colwidths = c(1, ncol(t1) - 1 - (1 + tem25), 1 + tem25)) |>
-  hline(i = c(4, 9), border = officer::fp_border(color = "grey60", width = .5)) |>
-  bold(i = 1) |> align(j = -1, align = "center", part = "all") |>
-  fontsize(size = 9, part = "all") |> autofit() |> fit_to_width(6.5) |>
-  add_footer_lines(paste0("Incidência: casos confirmados por 100.000 pessoas-ano; entre parênteses, média anual de casos. Denominador estimado por nascidos vivos menos óbitos. RR: regressão binomial negativa com o ano-mês como unidade e ajuste para mês.", if (tem25) " *Dados de 2025 preliminares." else "")) |>
-  fontsize(size = 8, part = "footer")
-```
-
-
-```{r tab2}
-lin <- function(x, d = 2) if (is.null(x) || !nrow(x)) "—" else paste0(f(x$irr, d), " (", f(x$lo, d), "–", f(x$hi, d), ")")
-rot_e <- c("6m_4a|Não vacinados 2019–2023" = "6 meses a 4 anos — +10 p.p. de não vacinados (DTP, coortes 2019–2023)",
-           "6m_4a|Variação da DTP" = "6 meses a 4 anos — 10 p.p. de queda da cobertura de DTP (2010–2014 a 2019–2023)",
-           "lt_6m|dTpa 2023–2024" = "< 6 meses — 10 p.p. a menos de cobertura de dTpa em gestantes (2023–2024)")
-t2 <- purrr::map_dfr(names(rot_e), function(k) {
-  gr <- sub("\\|.*", "", k); e <- sub(".*\\|", "", k)
-  tibble(`Grupo e exposição` = rot_e[[k]],
-         `Todos os municípios do país` = lin(M(gr, e, "d_continua")),
-         `Municípios da mesma região (principal)` = lin(M(gr, e, "e_continua_regiao_ano")),
-         `Somente casos laboratoriais` = if (tem_sl) lin(SL(e)) else "—",
-         `2025 (preliminar)` = if (tem25) lin(M(gr, e, "e_continua_regiao_ano", x = md_all |> filter(ano_alvo == 2025))) else "—")
-})
-flextable(t2) |> set_caption("Tabela 2. Vacinação e aumento de casos de coqueluche em 2024: quanto o aumento foi maior a cada 10 pontos percentuais de exposição, segundo a forma de comparar os municípios.") |> fontsize(size = 8, part = "all") |> autofit() |> fit_to_width(6.5) |>
-  add_footer_lines("RR (IC95%): quantas vezes o aumento de casos entre 2016–2019 e 2024 foi maior em municípios com 10 pontos percentuais a mais de crianças não vacinadas, de queda da DTP ou de gestantes não vacinadas com dTpa. Regressão de Poisson com efeitos fixos de município e de ano (todos os municípios) ou de município e de região × ano (mesma região), offset populacional e erros-padrão agrupados por município.") |>
-  fontsize(size = 8, part = "footer")
-```
-
-# Figuras
-
-```{r f1, fig.cap = "Figura 1. Fluxograma de seleção das notificações e dos casos confirmados de coqueluche em menores de 5 anos, Brasil.", out.width = "85%"}
-knitr::include_graphics(file.path(FIG, "fig1_fluxograma.png"))
-```
-
-```{r f2, fig.cap = "Figura 2. Casos confirmados de coqueluche por mês de início dos sintomas, por faixa etária, Brasil, 2016–2025. Barras: casos registrados (vermelho: 2024–2025). Linha tracejada e faixa cinza-escura: casos esperados pelas taxas mensais de 2016–2019 aplicadas à população de cada mês, com intervalo de 95% de Poisson. Fundo cinza: pandemia de COVID-19.", out.width = "100%"}
-knitr::include_graphics(file.path(FIG, "clin1_curva_epidemica.png"))
-```
-
-```{r f3, fig.cap = "Figura 3. Incidência anual de coqueluche (casos confirmados por 100.000 pessoas-ano) por faixa etária (A) e por região em menores de 5 anos (B), Brasil, 2010–2025. Denominador estimado por nascidos vivos menos óbitos. Área sombreada: dados preliminares de 2025.", out.width = "100%"}
-knitr::include_graphics(file.path(FIG, "fig2_taxas_anuais.png"))
-```
-
-```{r f4, fig.cap = "Figura 4. Casos de coqueluche a mais (ou a menos) que o esperado em menores de 5 anos em 2024, por faixa etária, região, semestre e critério de confirmação. Esperados: taxas de 2016–2019 aplicadas à população de 2024. Entre parênteses, percentual do total de casos a mais.", out.width = "100%"}
-knitr::include_graphics(file.path(FIG, "fig4_decomposicao_excesso.png"))
-```
-
-```{r f5, fig.cap = "Figura 5. Cobertura vacinal e aumento de casos de coqueluche em 2024, comparando regiões diferentes. A: razão de taxas de 2024 em relação a 2016–2019 em crianças de 6 meses a 4 anos e variação da cobertura de DTP entre 2010–2014 e 2019–2023, por unidade da federação. B: razão de taxas de 2024 em cada categoria de exposição municipal, comparando municípios de todo o país, sem considerar a região (Poisson com efeitos fixos de município; intervalos de confiança de 95%). T1, T2 e T3: tercis de menor, intermediária e maior proporção de crianças não vacinadas nas coortes de 2019–2023; para a dTpa, tercis de menor, intermediária e maior cobertura em gestantes em 2023–2024. Os tercis foram ponderados pelos nascidos vivos, de modo que cada um reúne cerca de um terço das crianças.", out.width = "100%"}
-knitr::include_graphics(file.path(FIG, "fig5_cobertura_excesso.png"))
-```
-
-```{r f6, fig.cap = "Figura 6. Diferença de incidência de coqueluche entre 2024 e 2016–2019 (casos por 100.000 pessoas-ano) em crianças de 6 meses a 4 anos, segundo o tercil municipal de crianças não vacinadas nas coortes de 2019–2023, por região. Tercis ponderados pelos nascidos vivos: cada tercil reúne cerca de um terço das crianças do país. Barras: intervalos de confiança de 95%. A comparação relevante é entre os tercis dentro de cada região.", out.width = "100%"}
-knitr::include_graphics(file.path(FIG, "clin3_dif_incidencia_nao_vacinados.png"))
-```
-
-```{r f7, eval = tem_atr, fig.cap = "Figura 7. Proporção dos casos confirmados de coqueluche em 2024 que poderiam ter sido evitados com maior vacinação. Crianças de 6 meses a 4 anos: cenário com proporção de não vacinados igual à de 2010–2014. Menores de 6 meses: cenário com cobertura de dTpa em gestantes de pelo menos 80% em todos os municípios. Estimativas do modelo que compara municípios da mesma região; barras: intervalos de confiança de 95%.", out.width = "90%"}
-knitr::include_graphics(file.path(FIG, "clin8_fracao_atribuivel.png"))
-```
-
-```{r f8, eval = tem_aps && tem_med, fig.cap = "Figura 8. Efeito da cobertura da Estratégia Saúde da Família (ESF) sobre o aumento de casos de coqueluche em 2024 em crianças de 6 meses a 4 anos, separado no que passa pela vacinação (indireto) e no que ocorre por outras vias (direto). a: diferença na proporção de não vacinados associada a 50 pontos percentuais a mais de cobertura da ESF (regressão linear ponderada pelos nascidos vivos, ajustada por região). b: quantas vezes o aumento de casos foi maior a cada 10 pontos percentuais a mais de não vacinados. c': efeito direto; c: efeito total. Modelos de Poisson com efeitos fixos de município e de região × ano; intervalos de confiança por bootstrap agrupado por município.", out.width = "90%"}
-knitr::include_graphics(file.path(FIG, "clin7_mediacao_esf.png"))
-```
 
 # Material suplementar
 
