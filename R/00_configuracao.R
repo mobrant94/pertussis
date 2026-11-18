@@ -35,6 +35,30 @@ anos_casos      <- 2010:2025   # casos de coqueluche (2025: dados preliminares)
 anos_nascimento <- 2005:2025   # crianças de 1 a 4 anos em 2010 nasceram a partir de 2005
 anos_referencia <- 2016:2019   # período de referência, antes da pandemia
 anos_alvo       <- c(2024, 2025)
+
+# Janelas comparadas com 2016–2019 (mês inicial e final).
+# Principal: julho de 2024 a dezembro de 2025. A razão entre casos observados e
+# esperados pelas taxas de 2016–2019 passou a superar 1 em julho de 2024; de janeiro
+# a junho de 2024 os casos ficaram abaixo do esperado, e incluí-los diluiria a onda.
+# As demais janelas são análises suplementares.
+janelas <- tibble::tribble(
+  ~nome,          ~inicio,      ~fim,         ~rotulo,
+  "principal",    "2024-07-01", "2025-12-01", "jul/2024–dez/2025",
+  "ano_2024",     "2024-01-01", "2024-12-01", "2024",
+  "ano_2025",     "2025-01-01", "2025-12-01", "2025",
+  "jul_dez_2024", "2024-07-01", "2024-12-01", "jul–dez/2024")
+janela_principal <- "principal"
+
+# Mantém 2016–2019 e os meses da janela; a janela vira um único período ("ano" = 9999),
+# de modo que os modelos tratam a janela como uma unidade de tempo.
+recorte <- function(painel, janela) {
+  ini <- as.Date(janelas$inicio[janelas$nome == janela])
+  fim <- as.Date(janelas$fim[janelas$nome == janela])
+  painel |>
+    dplyr::mutate(alvo = as.integer(data >= ini & data <= fim)) |>
+    dplyr::filter(ano %in% anos_referencia | alvo == 1) |>
+    dplyr::mutate(ano = ifelse(alvo == 1, 9999, ano))
+}
 anos_esf        <- 2017:2020   # cobertura média da Estratégia Saúde da Família
 
 faixas       <- c("lt_6m", "6_11m", "1_4a")

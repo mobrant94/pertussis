@@ -53,15 +53,14 @@ nomeia <- function(termo) {
 resultados <- list()
 descritivo <- list()
 
-for (ano_alvo in anos_alvo) {
+for (ano_alvo in janelas$nome) {
 
-  painel_ano <- painel |>
-    filter(ano %in% c(anos_referencia, ano_alvo)) |>
+  painel_ano <- recorte(painel, ano_alvo) |>
     mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a")) |>
     group_by(code_muni, regiao, grupo, ano) |>
     summarise(casos = sum(casos), casos_lab = sum(casos_lab), pa = sum(pop) / 12, .groups = "drop") |>
     filter(pa > 0) |>
-    mutate(alvo = as.integer(ano == ano_alvo)) |>
+    mutate(alvo = as.integer(ano == 9999)) |>
     left_join(cobertura, by = c("code_muni", "regiao")) |>
     left_join(esf, by = "code_muni") |>
     mutate(esf10 = (aps - 80) / 10)
@@ -139,6 +138,6 @@ salvar_csv(resultados, "modelos_aps.csv")
 salvar_csv(bind_rows(descritivo), "aps_casos_por_categoria.csv")
 
 resultados |>
-  filter(modelo %in% c("g_interacao", "i_aps"), ano_alvo == 2024) |>
+  filter(modelo %in% c("g_interacao", "i_aps"), ano_alvo == janela_principal) |>
   select(exposicao, modelo, termo, irr, lo, hi, p) |>
   print()

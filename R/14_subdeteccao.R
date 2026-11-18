@@ -20,6 +20,7 @@ painel    <- readRDS(file.path(pasta_proc, "painel_mensal.rds"))
 cobertura <- readRDS(file.path(pasta_proc, "cobertura_mun.rds"))
 deteccao  <- ler_csv("deteccao_por_regiao.csv")
 regioes_corrigidas <- c("Norte", "Nordeste")
+periodo_alvo <- "jul/2024–dez/2025"   # janela principal (ano = 9999 após recorte())
 
 # 1. Fatores de correção --------------------------------------------------------------
 # variação da taxa de notificação em relação a 2016–2019
@@ -27,7 +28,7 @@ variacao <- deteccao |>
   group_by(regiao) |>
   mutate(var = tx_notif / tx_notif[periodo == "2016–2019"]) |>
   ungroup() |>
-  filter(periodo != "2016–2019") |>
+  filter(periodo == periodo_alvo) |>
   select(regiao, periodo, var)
 
 variacao_sul_sudeste <- deteccao |>
@@ -35,22 +36,22 @@ variacao_sul_sudeste <- deteccao |>
   group_by(periodo) |>
   summarise(tx = 1e5 * sum(notif) / sum(pa)) |>
   mutate(var_sse = tx / tx[periodo == "2016–2019"]) |>
-  filter(periodo != "2016–2019") |>
+  filter(periodo == periodo_alvo) |>
   select(periodo, var_sse)
 
 fatores_empiricos <- variacao |>
   filter(regiao %in% regioes_corrigidas) |>
   left_join(variacao_sul_sudeste, by = "periodo") |>
-  transmute(regiao, ano = as.integer(periodo),
+  transmute(regiao, ano = 9999,
             `Investigação no nível de 2016–2019` = pmax(1, 1 / var),
             `Mesma variação do Sul e do Sudeste` = pmax(1, var_sse / var)) |>
   pivot_longer(-c(regiao, ano), names_to = "cenario", values_to = "k")
 
-fatores_fixos <- expand_grid(regiao = regioes_corrigidas, ano = anos_alvo, k = c(1, 1.5, 2, 3)) |>
+fatores_fixos <- expand_grid(regiao = regioes_corrigidas, ano = 9999, k = c(1, 1.5, 2, 3)) |>
   mutate(cenario = ifelse(k == 1, "Sem correção",
                           paste0("Fator fixo ", format(k, decimal.mark = ","), "×")))
 
-fatores <- bind_rows(fatores_fixos, fatores_empiricos) |> filter(ano %in% anos_alvo)
+fatores <- bind_rows(fatores_fixos, fatores_empiricos)
 salvar_csv(fatores, "subdeteccao_fatores.csv")
 cenarios <- unique(fatores$cenario)
 
@@ -60,15 +61,15 @@ taxa_referencia <- painel |>
   group_by(faixa, regiao, mes) |>
   summarise(tx = sum(casos) / sum(pop), .groups = "drop")
 
-obs_esp <- painel |>
-  filter(ano %in% anos_alvo) |>
+obs_esp <- recorte(painel, janela_principal) |>
+  filter(alvo == 1) |>
   left_join(taxa_referencia, by = c("faixa", "regiao", "mes")) |>
   group_by(ano, regiao) |>
   summarise(obs = sum(casos), esp = sum(tx * pop, na.rm = TRUE), .groups = "drop")
 
 magnitude <- list()
 for (cen in cenarios) {
-  for (a in anos_alvo) {
+  for (a in 9999) {
     k_cen <- fatores |> filter(cenario == cen, ano == a) |> select(regiao, k)
     regioes <- obs_esp |>
       filter(ano == a) |>
@@ -98,8 +99,7 @@ exposicoes <- tibble(grupo    = c("6m_4a", "6m_4a", "lt_6m"),
                      sinal    = c(1, -1, -1),
                      rotulo   = c("Não vacinados 2019–2023", "Variação da DTP", "dTpa 2023–2024"))
 
-painel_ano <- painel |>
-  filter(ano %in% c(anos_referencia, anos_alvo)) |>
+painel_ano <- recorte(painel, janela_principal) |>
   mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a")) |>
   group_by(code_muni, regiao, grupo, ano) |>
   summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
@@ -108,7 +108,7 @@ painel_ano <- painel |>
 
 modelos <- list()
 for (cen in cenarios) {
-  for (a in anos_alvo) {
+  for (a in 9999) {
     k_cen <- fatores |> filter(cenario == cen, ano == a) |> select(regiao, k)
     for (i in 1:nrow(exposicoes)) {
       dados <- painel_ano |> filter(grupo == exposicoes$grupo[i], ano %in% c(anos_referencia, a))
@@ -142,4 +142,4 @@ for (cen in cenarios) {
 }
 salvar_csv(bind_rows(modelos), "subdeteccao_modelos.csv")
 
-magnitude |> filter(regiao == "Brasil", ano == 2024) |> select(cenario, oe, excesso) |> print()
+magnitude |> filter(regiao == "Brasil", ano == 9999) |> select(cenario, oe, excesso) |> print()

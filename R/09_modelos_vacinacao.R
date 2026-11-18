@@ -45,16 +45,15 @@ tabela_coef <- function(ajuste, dados, nome_modelo, exp_i) {
 
 resultados <- list()
 
-for (ano_alvo in anos_alvo) {
+for (ano_alvo in janelas$nome) {
 
-  # Painel município-ano
-  painel_ano <- painel |>
-    filter(ano %in% c(anos_referencia, ano_alvo)) |>
+  # Painel município-período (cada ano de 2016–2019 e a janela)
+  painel_ano <- recorte(painel, ano_alvo) |>
     mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a")) |>
     group_by(code_muni, regiao, grupo, ano) |>
     summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
     filter(pa > 0) |>
-    mutate(alvo = as.integer(ano == ano_alvo)) |>
+    mutate(alvo = as.integer(ano == 9999)) |>
     left_join(cobertura, by = c("code_muni", "regiao"))
 
   for (i in 1:nrow(exposicoes)) {

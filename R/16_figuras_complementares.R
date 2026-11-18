@@ -20,8 +20,8 @@ painel <- readRDS(file.path(pasta_proc, "painel_mensal.rds"))
 cob    <- readRDS(file.path(pasta_proc, "cobertura_mun.rds"))
 f_aps  <- file.path(pasta_proc, "aps_mun.rds")
 anos_pos <- intersect(anos_alvo, unique(painel$ano))
-ROT_PER <- c("2016–2019", as.character(anos_pos))
-COR_PER <- setNames(c("grey55", "#B2182B", "#EF8A62")[seq_along(ROT_PER)], ROT_PER)
+ROT_PER <- c("2016–2019", "jul/2024–dez/2025", as.character(anos_pos))
+COR_PER <- setNames(c("grey55", "#67001F", "#D6604D", "#F4A582")[seq_along(ROT_PER)], ROT_PER)
 REG <- c("Sul", "Sudeste", "Centro-Oeste", "Nordeste", "Norte")
 tema_c <- tema + theme(panel.grid.major.y = element_line(colour = "grey92", linewidth = .3))
 ic_taxa <- function(casos, pa) {        # IC95% exato de Poisson para taxa por 100.000
@@ -36,22 +36,26 @@ m <- painel |> filter(ano >= 2016) |> group_by(faixa, data, ano, mes) |>
   left_join(taxa_ref, by = c("faixa", "mes")) |>
   mutate(esp = tx * pop, esp_lo = qpois(.025, esp), esp_hi = qpois(.975, esp),
          faixa = factor(nomes_faixas[as.character(faixa)], levels = nomes_faixas),
-         periodo = case_when(ano %in% anos_pos ~ "Após a pandemia", ano >= 2020 ~ "Pandemia", TRUE ~ "Referência"))
+         periodo = case_when(data >= as.Date(janelas$inicio[janelas$nome == janela_principal]) &
+                               data <= as.Date(janelas$fim[janelas$nome == janela_principal]) ~ "Janela",
+                             ano >= 2020 & ano <= 2023 ~ "Pandemia", TRUE ~ "Referência"))
 p1 <- ggplot(m, aes(data)) +
   annotate("rect", xmin = as.Date("2020-03-01"), xmax = as.Date("2023-12-31"), ymin = -Inf, ymax = Inf, fill = "grey94") +
   geom_ribbon(aes(ymin = esp_lo, ymax = esp_hi), fill = "grey80", alpha = .7) +
   geom_col(aes(y = casos, fill = periodo), width = 25) +
   geom_line(aes(y = esp), linetype = "22", linewidth = .45, colour = "grey15") +
   facet_wrap(~ faixa, ncol = 1, scales = "free_y") +
-  scale_fill_manual(values = c("Referência" = "grey55", "Pandemia" = "grey70", "Após a pandemia" = "#B2182B"), guide = "none") +
+  scale_fill_manual(values = c("Referência" = "grey55", "Pandemia" = "grey70", "Janela" = "#B2182B"), guide = "none") +
   scale_x_date(date_breaks = "1 year", date_labels = "%Y", expand = expansion(mult = .01)) +
   scale_y_continuous(labels = num, expand = expansion(mult = c(0, .08))) +
   labs(x = "Mês de início dos sintomas", y = "Casos confirmados por mês") + tema_c
 salvar_figura(p1, "clin1_curva_epidemica", 10, 7)
 
 # ------------------------------------------------------------------ clin2: incidência por faixa etária
-per <- painel |>
-  mutate(per = case_when(ano %in% anos_referencia ~ "2016–2019", ano %in% anos_pos ~ as.character(ano))) |>
+ini_j <- as.Date(janelas$inicio[janelas$nome == janela_principal]); fim_j <- as.Date(janelas$fim[janelas$nome == janela_principal])
+per <- bind_rows(
+  painel |> mutate(per = case_when(ano %in% anos_referencia ~ "2016–2019", ano %in% anos_pos ~ as.character(ano))),
+  painel |> filter(data >= ini_j, data <= fim_j) |> mutate(per = "jul/2024–dez/2025")) |>
   filter(!is.na(per)) |>
   group_by(faixa, per) |> summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
   mutate(taxa = 1e5 * casos / pa, ic_taxa(casos, pa),
@@ -67,9 +71,9 @@ salvar_figura(p2, "clin2_incidencia_faixa", 7.5, 4.5)
 
 # ------------------------------------------------------------------ clin3–5: diferença de incidência por categoria, por região
 dif_por <- function(var, lactentes = FALSE) {
-  painel |> filter(if (lactentes) faixa == "lt_6m" else faixa != "lt_6m", ano %in% c(anos_referencia, 2024)) |>
+  recorte(painel, janela_principal) |> filter(if (lactentes) faixa == "lt_6m" else faixa != "lt_6m") |>
     left_join(var, by = "code_muni") |> filter(!is.na(grupo_exp)) |>
-    mutate(per = if_else(ano == 2024, "p24", "ref")) |>
+    mutate(per = if_else(alvo == 1, "p24", "ref")) |>
     group_by(regiao, grupo_exp, per) |> summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
     pivot_wider(names_from = per, values_from = c(casos, pa)) |>
     mutate(dif = 1e5 * (casos_p24 / pa_p24 - casos_ref / pa_ref),
@@ -89,7 +93,7 @@ graf_dif <- function(d, legenda, cores, arquivo, ylab) {
   salvar_figura(p, arquivo, 10, 4.4)
   write.csv(d, file.path(pasta_saidas, paste0(arquivo, ".csv")), row.names = FALSE, fileEncoding = "UTF-8")
 }
-YLAB <- "Diferença de incidência, 2024 − 2016–2019\n(casos por 100.000 pessoas-ano)"
+YLAB <- "Diferença de incidência, jul/2024–dez/2025 − 2016–2019\n(casos por 100.000 pessoas-ano)"
 nv <- cob |> filter(!is.na(ter_naovac)) |>
   transmute(code_muni, grupo_exp = factor(c("T1 (menor)" = "Tercil inferior", "T2" = "Tercil intermediário",
                                             "T3 (maior)" = "Tercil superior")[as.character(ter_naovac)],
@@ -102,7 +106,7 @@ tpa <- cob |> filter(!is.na(ter_dtpa)) |>
                                           levels = c("Tercil inferior", "Tercil intermediário", "Tercil superior")))
 graf_dif(dif_por(tpa, lactentes = TRUE), "Cobertura de dTpa em gestantes\n(2023–2024)",
          c("#FDAE6B", "#E6550D", "#7F2704"), "clin5_dif_incidencia_lactentes_dtpa",
-         "Diferença de incidência em < 6 meses, 2024 − 2016–2019\n(casos por 100.000 pessoas-ano)")
+         "Diferença de incidência em < 6 meses, jul/2024–dez/2025 − 2016–2019\n(casos por 100.000 pessoas-ano)")
 
 if (file.exists(f_aps)) {
   aps <- readRDS(f_aps) |> filter(!is.na(cat_aps)) |>
@@ -142,7 +146,7 @@ if (file.exists(f_aps)) {
     b_t <- if (!is.null(bb) && nrow(bb)) paste0("b: RR ", fmt(bb$irr, 2), " por 10 p.p.\n(IC95% ", fmt(bb$lo, 2), "–", fmt(bb$hi, 2), ")") else
       paste0("b: RR ", fmt(g("total", "b_irr10"), 2), "\npor 10 p.p.")
     caixas <- tibble(x = c(0, 5, 10), y = c(0, 2.2, 0),
-                     txt = c("Cobertura da ESF\n(+50 p.p.)", "Crianças não vacinadas\n(DTP, coortes 2019–2023)", "Excesso de coqueluche\nem 2024 (6 m–4 anos)"))
+                     txt = c("Cobertura da ESF\n(+50 p.p.)", "Crianças não vacinadas\n(DTP, coortes 2019–2023)", "Excesso de coqueluche\nem jul/2024–dez/2025\n(6 m–4 anos)"))
     setas <- tibble(x = c(1.4, 6.4, 1.6), y = c(.45, 1.75, 0), xend = c(3.6, 8.6, 8.4), yend = c(1.75, .45, 0))
     rot <- tibble(x = c(1.7, 8.3, 5, 5), y = c(1.35, 1.35, .35, -.9), hj = c(1, 0, .5, .5),
                   txt = c(a_t, b_t, paste0("c': ", rr_t("direto")),
@@ -169,7 +173,7 @@ if (file.exists(f_atr)) {
     geom_errorbarh(aes(xmin = pct_lo, xmax = pct_hi), height = .15, colour = "grey20") +
     geom_text(aes(x = pct_hi, label = rot_txt), hjust = -.08, size = 2.9, colour = "grey15", lineheight = .95) +
     scale_x_continuous(labels = function(x) paste0(fmt(x), "%"), expand = expansion(mult = c(0, .55))) +
-    labs(x = "Fração dos casos confirmados em 2024 atribuível à lacuna vacinal (%)", y = NULL) + tema_c +
+    labs(x = "Fração dos casos confirmados em jul/2024–dez/2025 atribuível à lacuna vacinal (%)", y = NULL) + tema_c +
     theme(panel.grid.major.y = element_blank(), panel.grid.major.x = element_line(colour = "grey92", linewidth = .3))
   salvar_figura(p8, "clin8_fracao_atribuivel", 8.5, 3.4)
 }
@@ -179,16 +183,16 @@ if (file.exists(f_sm) && file.exists(f_sa)) {
   ORD_C <- c("Sem correção", "Fator fixo 1,5×", "Fator fixo 2,0×", "Investigação no nível de 2016–2019",
              "Fator fixo 3,0×", "Mesma variação do Sul e do Sudeste")
   rot_c <- function(x) factor(x, levels = rev(intersect(ORD_C, unique(x))))
-  sm <- read.csv(f_sm, encoding = "UTF-8") |> filter(ano == 2024, regiao %in% c("Norte", "Nordeste", "Brasil")) |>
+  sm <- read.csv(f_sm, encoding = "UTF-8") |> filter(ano == 9999, regiao %in% c("Norte", "Nordeste", "Brasil")) |>
     mutate(cenario = rot_c(cenario), regiao = factor(regiao, levels = c("Brasil", "Nordeste", "Norte")))
   pa9 <- ggplot(sm, aes(oe, cenario, colour = regiao)) +
     geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
     geom_pointrange(aes(xmin = lo, xmax = hi), position = position_dodge(width = .6), size = .3, linewidth = .6) +
     scale_x_log10(labels = label_number(decimal.mark = ",", accuracy = .1)) +
     scale_colour_manual(values = c(Brasil = "grey20", Nordeste = "#E6550D", Norte = "#756BB1"), name = NULL) +
-    labs(x = "Casos observados / esperados em 2024 (escala log)", y = NULL, tag = "A") + tema_c +
+    labs(x = "Casos observados / esperados em jul/2024–dez/2025 (escala log)", y = NULL, tag = "A") + tema_c +
     theme(legend.position = "bottom")
-  sa <- read.csv(f_sa, encoding = "UTF-8") |> filter(ano_alvo == 2024, exposicao == "Não vacinados 2019–2023") |>
+  sa <- read.csv(f_sa, encoding = "UTF-8") |> filter(ano_alvo == 9999, exposicao == "Não vacinados 2019–2023") |>
     mutate(cenario = rot_c(cenario), comparacao = factor(comparacao, levels = c("Todos os municípios", "Mesma região")))
   pb9 <- ggplot(sa, aes(irr, cenario, colour = comparacao)) +
     geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +

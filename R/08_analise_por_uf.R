@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 # 08_analise_por_uf.R
-# Comparação entre unidades da federação: RR de 2024 vs 2016–2019 e variação da
+# Comparação entre unidades da federação: RR da janela principal vs 2016–2019 e variação da
 # cobertura vacinal, com correlação de Spearman (Figura 5A).
 # ------------------------------------------------------------------------------
 
@@ -11,10 +11,9 @@ cobertura_uf <- read.csv(file.path(pasta_saidas, "cobertura_uf_ponderada.csv"),
                          encoding = "UTF-8", colClasses = c(uf = "character"))
 
 # 1. RR por UF (0,5 somado aos casos para evitar zero) ---------------------------
-rr_uf <- painel |>
-  filter(ano %in% c(anos_referencia, 2024)) |>
+rr_uf <- recorte(painel, janela_principal) |>
   mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a"),
-         periodo = ifelse(ano == 2024, "p24", "ref")) |>
+         periodo = ifelse(alvo == 1, "p24", "ref")) |>
   group_by(uf, grupo, periodo) |>
   summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
   pivot_wider(names_from = periodo, values_from = c(casos, pa)) |>

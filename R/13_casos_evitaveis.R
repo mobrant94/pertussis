@@ -1,6 +1,6 @@
 # ------------------------------------------------------------------------------
 # 13_casos_evitaveis.R
-# Casos de 2024 que não teriam ocorrido com maior vacinação, usando os
+# Casos da janela principal (jul/2024–dez/2025) que não teriam ocorrido com maior vacinação, usando os
 # coeficientes do modelo principal (11_laboratorio_deteccao_onda.R, todos os casos):
 #   - < 6 meses: municípios com dTpa em gestantes < 80% elevados a 80%
 #   - 6 meses a 4 anos: não vacinados reduzidos ao nível anterior à queda das
@@ -13,11 +13,11 @@ source("R/00_configuracao.R")
 painel        <- readRDS(file.path(pasta_proc, "painel_mensal.rds"))
 cobertura     <- readRDS(file.path(pasta_proc, "cobertura_mun.rds"))
 sensibilidade <- ler_csv("sensibilidade_laboratorio.csv")
-decomposicao  <- ler_csv("decomposicao_excesso_2024.csv")
+decomposicao  <- ler_csv(paste0("decomposicao_excesso_", janela_principal, ".csv"))
 
-# Casos observados em 2024 por município e grupo etário (municípios com a exposição)
-casos_2024 <- painel |>
-  filter(ano == 2024) |>
+# Casos observados na janela principal por município e grupo etário (municípios com a exposição)
+casos_2024 <- recorte(painel, janela_principal) |>
+  filter(alvo == 1) |>
   mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a")) |>
   group_by(code_muni, grupo) |>
   summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>

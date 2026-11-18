@@ -1,7 +1,7 @@
 # ------------------------------------------------------------------------------
 # 11_laboratorio_deteccao_onda.R
 #   A) Modelo principal (contínuo, mesma região) com todos os casos e só com os
-#      confirmados por laboratório, em 2024
+#      confirmados por laboratório, na janela principal (jul/2024–dez/2025)
 #   B) Notificação, confirmação e confirmação laboratorial por região e período
 #   C) Momento da onda em cada região: mês em que os casos passaram a superar o
 #      dobro do esperado e mês do pico
@@ -15,8 +15,7 @@ cobertura <- readRDS(file.path(pasta_proc, "cobertura_mun.rds"))
 sinan     <- readRDS(file.path(pasta_proc, "sinan_lt5.rds"))
 
 # A) Sensibilidade laboratorial ------------------------------------------------------
-painel_2024 <- painel |>
-  filter(ano %in% c(anos_referencia, 2024)) |>
+painel_2024 <- recorte(painel, janela_principal) |>
   mutate(grupo = ifelse(faixa == "lt_6m", "lt_6m", "6m_4a")) |>
   group_by(code_muni, regiao, grupo, ano) |>
   summarise(casos = sum(casos), casos_lab = sum(casos_lab), pa = sum(pop) / 12, .groups = "drop") |>
@@ -36,7 +35,7 @@ for (i in 1:nrow(exposicoes)) {
     dados$casos <- dados[[desfecho]]
     dados <- dados |>
       filter(!is.na(exposicao)) |>
-      mutate(alvo = as.integer(ano == 2024),
+      mutate(alvo = as.integer(ano == 9999),
              cont = exposicoes$sinal[i] * exposicao / 10 * alvo)
 
     modelo <- fepois(casos ~ cont | code_muni + regiao^ano, offset = ~ log(pa),
@@ -56,24 +55,32 @@ for (i in 1:nrow(exposicoes)) {
 salvar_csv(bind_rows(sensibilidade), "sensibilidade_laboratorio.csv")
 
 # B) Detecção por região ---------------------------------------------------------------
-pessoas_ano <- painel |>
-  filter(ano %in% c(anos_referencia, anos_alvo)) |>
-  group_by(regiao, ano) |>
-  summarise(pa = sum(pop) / 12, .groups = "drop")
+# Períodos: 2016–2019, 2024, 2025 e a janela principal (jul/2024–dez/2025)
+meses <- painel |> distinct(data, ano)
+ini_j <- as.Date(janelas$inicio[janelas$nome == janela_principal])
+fim_j <- as.Date(janelas$fim[janelas$nome == janela_principal])
+periodos_mes <- bind_rows(
+  meses |> filter(ano %in% anos_referencia) |> mutate(periodo = "2016–2019"),
+  meses |> filter(ano %in% anos_alvo) |> mutate(periodo = as.character(ano)),
+  meses |> filter(data >= ini_j, data <= fim_j) |> mutate(periodo = "jul/2024–dez/2025"))
+
+pessoas <- painel |>
+  group_by(regiao, data) |>
+  summarise(pa = sum(pop) / 12, .groups = "drop") |>
+  inner_join(periodos_mes, by = "data", relationship = "many-to-many") |>
+  group_by(regiao, periodo) |>
+  summarise(pa = sum(pa), .groups = "drop")
 
 deteccao <- sinan |>
   filter(code_muni %in% unique(painel$code_muni)) |>
-  mutate(ano = year(dt_sin),
+  mutate(data = floor_date(dt_sin, "month"),
          regiao = regiao_do_municipio(code_muni),
          confirmado = CLASSI_FIN %in% "1",
          laboratorio = confirmado & CRITERIO %in% "1") |>
-  filter(ano %in% c(anos_referencia, anos_alvo)) |>
-  group_by(regiao, ano) |>
-  summarise(notif = n(), conf = sum(confirmado), lab = sum(laboratorio), .groups = "drop") |>
-  left_join(pessoas_ano, by = c("regiao", "ano")) |>
-  mutate(periodo = ifelse(ano %in% anos_referencia, "2016–2019", as.character(ano))) |>
+  inner_join(periodos_mes |> select(-ano), by = "data", relationship = "many-to-many") |>
   group_by(regiao, periodo) |>
-  summarise(notif = sum(notif), conf = sum(conf), lab = sum(lab), pa = sum(pa), .groups = "drop") |>
+  summarise(notif = n(), conf = sum(confirmado), lab = sum(laboratorio), .groups = "drop") |>
+  left_join(pessoas, by = c("regiao", "periodo")) |>
   mutate(tx_notif = 1e5 * notif / pa,
          tx_conf  = 1e5 * conf / pa,
          tx_lab   = 1e5 * lab / pa,

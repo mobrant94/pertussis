@@ -63,12 +63,12 @@ p3 <- ggplot(rm, aes(rr, factor(mes, levels = 12:1, labels = rev(meses)), colour
   facet_wrap(~ faixa, nrow = 1) + labs(x = "Razão de taxas vs 2016–2019 (escala log)", y = NULL) + tema
 salvar_figura(p3, "fig3_rr_mensal_2024", 10, 4.2)
 
-# Figura 4 — decomposição do excesso de 2024 -----------------------------------------
-dc <- read.csv(file.path(pasta_saidas, "decomposicao_excesso_2024.csv"), encoding = "UTF-8") |>
-  mutate(nivel = recode(nivel, !!!nomes_faixas, s1 = "Janeiro–junho", s2 = "Julho–dezembro",
+# Figura 4 — decomposição do excesso da janela principal -----------------------------------------
+dc <- read.csv(file.path(pasta_saidas, paste0("decomposicao_excesso_", janela_principal, ".csv")), encoding = "UTF-8") |>
+  mutate(nivel = recode(nivel, !!!nomes_faixas, s2_2024 = "Jul–dez/2024", s1_2025 = "Jan–jun/2025", s2_2025 = "Jul–dez/2025",
                         lab = "Laboratorial", nlab = "Clínico ou clínico-epidemiológico"),
-         estrato = factor(recode(estrato, Faixa = "Faixa etária", Regiao = "Região", Semestre = "Semestre", Criterio = "Critério"),
-                          levels = c("Faixa etária", "Região", "Semestre", "Critério")))
+         estrato = factor(recode(estrato, Faixa = "Faixa etária", Regiao = "Região", Semestre = "Período", Criterio = "Critério"),
+                          levels = c("Faixa etária", "Região", "Período", "Critério")))
 p4 <- ggplot(dc, aes(excesso, reorder(nivel, excesso), fill = excesso > 0)) +
   geom_col(width = .65) + geom_vline(xintercept = 0, colour = "grey40") +
   geom_text(aes(label = paste0(fmt(excesso), " (", fmt(pct_excesso), "%)"),
@@ -76,7 +76,7 @@ p4 <- ggplot(dc, aes(excesso, reorder(nivel, excesso), fill = excesso > 0)) +
   facet_wrap(~ estrato, scales = "free_y", ncol = 2) +
   scale_fill_manual(values = c(`TRUE` = "#2166AC", `FALSE` = "#B2182B"), guide = "none") +
   scale_x_continuous(expand = expansion(mult = c(.35, .35))) +
-  labs(x = "Casos observados em 2024 menos esperados pelas taxas de 2016–2019", y = NULL) + tema
+  labs(x = "Casos observados em jul/2024–dez/2025 menos esperados pelas taxas de 2016–2019", y = NULL) + tema
 salvar_figura(p4, "fig4_decomposicao_excesso", 10, 6)
 
 # Figura 5 — cobertura e excesso -------------------------------------------------------
@@ -91,9 +91,9 @@ p5a <- ggplot(uf, aes(delta_dtp, rr)) +
   scale_colour_brewer(palette = "Dark2", name = NULL) +
   labs(title = paste0("A. UF (Spearman ρ = ", fmt(co$rho_delta, 2), "; p = ", fmt(co$p_delta, 2), ")"),
        x = "Variação da cobertura de DTP, 2019–2023 vs 2010–2014 (p.p.)",
-       y = "RR 2024 vs 2016–2019, 6 meses a 4 anos") + tema
+       y = "RR jul/2024–dez/2025 vs 2016–2019, 6 meses a 4 anos") + tema
 md <- read.csv(file.path(pasta_saidas, "modelos_cobertura_excesso.csv"), encoding = "UTF-8") |>
-  filter(modelo == "a_rr_categoria", ano_alvo == 2024) |>
+  filter(modelo == "a_rr_categoria", ano_alvo == janela_principal) |>
   mutate(painel = paste(ifelse(grupo == "lt_6m", "< 6 meses:", "6 m–4 anos:"), exposicao),
          # mesma lógica em todos os blocos: situação mais desfavorável no topo
          termo = factor(termo, levels = c("Estável ou aumento", "Queda < 10 p.p.", "Queda ≥ 10 p.p.",
@@ -104,11 +104,11 @@ p5b <- ggplot(md, aes(irr, termo)) +
   geom_errorbarh(aes(xmin = lo, xmax = hi), height = .2) + geom_point(size = 1.8) +
   facet_wrap(~ painel, ncol = 1, scales = "free_y") +
   scale_x_log10(labels = label_number(decimal.mark = ",", accuracy = .1)) +
-  labs(title = "B. Municípios de todo o país, sem considerar a região", x = "RR 2024 vs 2016–2019 (escala log)", y = NULL) + tema
+  labs(title = "B. Municípios de todo o país, sem considerar a região", x = "RR jul/2024–dez/2025 vs 2016–2019 (escala log)", y = NULL) + tema
 salvar_figura(p5a + p5b + plot_layout(widths = c(1.2, 1)), "fig5_cobertura_excesso", 10.5, 5.4)
 
 # Figura S6 — ESF como modificadora de efeito ------------------------------------------
-ma <- ler_csv("modelos_aps.csv") |> filter(ano_alvo == 2024)
+ma <- ler_csv("modelos_aps.csv") |> filter(ano_alvo == janela_principal)
 rot_g <- c(`6m_4a` = "6 m–4 anos", lt_6m = "< 6 meses")
 rot_e <- c("Variação da DTP" = "por 10 p.p. de queda da DTP",
            "Não vacinados 2019–2023" = "por 10 p.p. a mais de não vacinados",
@@ -124,7 +124,7 @@ p6a <- ggplot(a, aes(irr, termo)) +
   facet_wrap(~ painel, ncol = 1, scales = "free_y") +
   scale_x_log10(labels = label_number(decimal.mark = ",", accuracy = .01)) +
   labs(title = "A. Efeito da lacuna vacinal por cobertura da APS",
-       x = "Razão entre excessos de 2024 (escala log)", y = "Cobertura da APS") + tema
+       x = "Razão entre excessos de jul/2024–dez/2025 (escala log)", y = "Cobertura da APS") + tema
 b <- ma |> filter(modelo == "h_grade", grupo == "6m_4a", exposicao == "Variação da DTP") |>
   tidyr::separate(termo, c("cobertura", "aps"), sep = " \\| ") |>
   bind_rows(tibble(cobertura = "Estável ou aumento", aps = "≥ 80%", irr = 1, lo = 1, hi = 1)) |>
@@ -137,6 +137,6 @@ p6b <- ggplot(b, aes(cobertura, irr, colour = aps)) +
   scale_colour_manual(values = c("#B2182B", "#F4A582", "#2166AC"), name = "Cobertura da APS") +
   labs(title = "B. 6 m–4 anos: variação da DTP x cobertura da APS",
        x = "Variação da cobertura de DTP, 2019–2023 vs 2010–2014",
-       y = "Razão entre excessos de 2024\n(ref.: DTP estável/aumento e APS ≥ 80%)") + tema
+       y = "Razão entre excessos de jul/2024–dez/2025\n(ref.: DTP estável/aumento e APS ≥ 80%)") + tema
 salvar_figura(p6a + p6b + plot_layout(widths = c(1, 1.2)), "fig6_aps_modificacao", 11, 6)
 message("Figuras do artigo prontas")

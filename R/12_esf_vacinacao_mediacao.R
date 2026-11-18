@@ -3,7 +3,7 @@
 #   A) Cobertura da ESF e coberturas vacinais: regressão linear ponderada pelos
 #      nascidos vivos de 2019–2023, ajustada por região (por 10 p.p. de ESF)
 #   B) Coberturas vacinais médias por categoria de ESF, por região e no Brasil
-#   C) Mediação (produto dos coeficientes), crianças de 6 meses a 4 anos, 2024:
+#   C) Mediação (produto dos coeficientes), crianças de 6 meses a 4 anos, janela principal:
 #        a = efeito da ESF sobre a proporção de não vacinados
 #        b = efeito dos não vacinados sobre o aumento de casos
 #        indireto = a × b; direto = efeito da ESF ajustado pelos não vacinados
@@ -60,14 +60,14 @@ brasil <- municipios |>
 salvar_csv(bind_rows(por_regiao, brasil), "esf_cobertura_por_categoria.csv")
 
 # C) Mediação ------------------------------------------------------------------------------
-painel_2024 <- painel |>
-  filter(ano %in% c(anos_referencia, 2024), faixa != "lt_6m") |>
+painel_2024 <- recorte(painel, janela_principal) |>
+  filter(faixa != "lt_6m") |>
   group_by(code_muni, regiao, ano) |>
   summarise(casos = sum(casos), pa = sum(pop) / 12, .groups = "drop") |>
   filter(pa > 0) |>
   inner_join(municipios |> select(code_muni, nao_vac, aps), by = "code_muni") |>
   filter(!is.na(nao_vac)) |>
-  mutate(alvo = as.integer(ano == 2024),
+  mutate(alvo = as.integer(ano == 9999),
          cont = nao_vac / 10 * alvo,      # não vacinados, por 10 p.p., no ano-alvo
          e10  = aps / 10 * alvo)          # ESF, por 10 p.p., no ano-alvo
 
