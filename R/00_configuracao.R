@@ -90,16 +90,76 @@ ler_csv <- function(nome) {
   read.csv(file.path(pasta_saidas, nome), encoding = "UTF-8")
 }
 
-# Tema e gravação das figuras
-tema <- theme_classic(base_size = 10) +
-  theme(strip.background = element_blank(),
-        strip.text = element_text(face = "bold"),
-        legend.position = "bottom",
-        plot.title = element_text(face = "bold", size = 10))
+# Fonte das figuras: Times New Roman ----------------------------------------------
+# Usa a fonte instalada no sistema; se não houver, procura os arquivos times*.ttf na
+# pasta fontes/ (copiados de C:/Windows/Fonts) e, em último caso, usa a Liberation
+# Serif, que tem as mesmas métricas da Times New Roman.
+FONTE <- "Times New Roman"
+local({
+  if (!FONTE %in% systemfonts::system_fonts()$family) {
+    arq <- list.files("fontes", pattern = "(?i)^times.*\\.ttf$", full.names = TRUE)
+    achar <- function(padrao, alternativa) {
+      f <- arq[grepl(padrao, basename(arq), ignore.case = TRUE)]
+      if (length(f)) f[1] else alternativa
+    }
+    lib <- function(negrito, italico) systemfonts::match_font("Liberation Serif", bold = negrito, italic = italico)$path
+    if (length(arq)) {
+      systemfonts::register_font(FONTE, plain = achar("^times\\.ttf$", arq[1]), bold = achar("^timesbd", arq[1]),
+                                 italic = achar("^timesi\\.ttf$", arq[1]), bolditalic = achar("^timesbi", arq[1]))
+    } else {
+      systemfonts::register_font(FONTE, plain = lib(FALSE, FALSE), bold = lib(TRUE, FALSE),
+                                 italic = lib(FALSE, TRUE), bolditalic = lib(TRUE, TRUE))
+      message("Times New Roman não encontrada: figuras com Liberation Serif (mesmas métricas).")
+    }
+  }
+})
 
-salvar_figura <- function(grafico, nome, largura, altura) {
-  ggsave(file.path(pasta_fig, paste0(nome, ".png")), grafico,
-         width = largura, height = altura, dpi = 400, bg = "white")
-  ggsave(file.path(pasta_fig, paste0(nome, ".tiff")), grafico,
-         width = largura, height = altura, dpi = 400, compression = "lzw", bg = "white")
+# Tema e gravação das figuras
+tema <- theme_classic(base_size = 10, base_family = FONTE) +
+  theme(text = element_text(colour = "black"),
+        axis.text = element_text(colour = "black", size = 9),
+        axis.title = element_text(size = 10),
+        axis.line = element_line(colour = "grey25", linewidth = .35),
+        axis.ticks = element_line(colour = "grey25", linewidth = .35),
+        strip.background = element_blank(),
+        strip.text = element_text(face = "bold", size = 10, hjust = 0),
+        legend.position = "bottom",
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 9.5),
+        legend.key.height = unit(4, "mm"),
+        panel.spacing = unit(4, "mm"),
+        plot.title = element_text(face = "bold", size = 10.5, hjust = 0),
+        plot.title.position = "plot",
+        plot.tag = element_text(face = "bold", size = 11),
+        plot.margin = margin(6, 8, 6, 6))
+ggplot2::update_geom_defaults("text", list(family = FONTE))
+ggplot2::update_geom_defaults("label", list(family = FONTE))
+
+salvar_figura <- function(grafico, nome, largura, altura, resolucao = 600, escala = 0.8) {
+  # escala < 1 reduz a área útil mantendo o tamanho da fonte: o texto fica legível quando a
+  # figura é reduzida à largura da página (cerca de 16 cm)
+  ggsave(file.path(pasta_fig, paste0(nome, ".png")), grafico, device = ragg::agg_png,
+         width = largura, height = altura, units = "in", dpi = resolucao, scale = escala, bg = "white")
+  ggsave(file.path(pasta_fig, paste0(nome, ".tiff")), grafico, device = ragg::agg_tiff,
+         width = largura, height = altura, units = "in", dpi = resolucao, scale = escala, compression = "lzw", bg = "white")
+}
+
+# Rótulos das categorias de exposição com pontos de corte e número de municípios -----
+# (tercis ponderados pelos nascidos vivos de 2019–2023; tabela gerada pelo script 04)
+int_br <- function(x) format(x, big.mark = ".", decimal.mark = ",", trim = TRUE)
+dec_br <- function(x, d = 1) format(round(x, d), decimal.mark = ",", nsmall = d, trim = TRUE)
+rotulo_categoria <- function(exp, sep = "\n", n_texto = "municípios") {
+  t <- read.csv(file.path(pasta_saidas, "tercis_resumo.csv"), encoding = "UTF-8")
+  t <- t[t$exposicao == exp, ]
+  n <- paste0(int_br(t$municipios), " ", n_texto)
+  if (exp == "delta_dtp") return(setNames(paste0(t$categoria, sep, n), t$categoria))
+  c1 <- dec_br(t$corte_1[1]); c2 <- dec_br(t$corte_2[1])
+  pos <- ifelse(grepl("T1", t$categoria), 1, ifelse(grepl("T2", t$categoria), 2, 3))
+  faixa <- c(paste0("< ", c1, "%"), paste0(c1, "–", c2, "%"), paste0("≥ ", c2, "%"))[pos]
+  setNames(paste0(t$categoria, sep, faixa, "; ", n), t$categoria)
+}
+rotulo_esf <- function(sep = " ", n_texto = "municípios") {
+  a <- readRDS(file.path(pasta_proc, "aps_mun.rds"))
+  n <- table(as.character(a$cat_aps))
+  setNames(paste0(names(n), sep, "(", int_br(as.integer(n)), " ", n_texto, ")"), names(n))
 }

@@ -105,6 +105,23 @@ cobertura$ter_dtpa <- relevel(cobertura$ter_dtpa, ref = "Maior cobertura (T3)")
 
 saveRDS(cobertura, file.path(pasta_proc, "cobertura_mun.rds"))
 
+# Pontos de corte e distribuição dos municípios e dos nascidos vivos por categoria
+resumo_categoria <- function(cat, x, nome) {
+  cobertura |>
+    filter(!is.na(.data[[cat]])) |>
+    group_by(categoria = as.character(.data[[cat]])) |>
+    summarise(minimo = min(.data[[x]], na.rm = TRUE), maximo = max(.data[[x]], na.rm = TRUE),
+              municipios = n(), nascidos = sum(nv_1923, na.rm = TRUE), .groups = "drop") |>
+    mutate(exposicao = nome, pct_municipios = 100 * municipios / sum(municipios),
+           pct_nascidos = 100 * nascidos / sum(nascidos))
+}
+tercis <- bind_rows(resumo_categoria("ter_naovac", "nao_vac", "nao_vac"),
+                    resumo_categoria("ter_dtpa", "dtpa_2324", "dtpa"),
+                    resumo_categoria("cat_delta", "delta_dtp", "delta_dtp")) |>
+  mutate(corte_1 = ifelse(exposicao == "nao_vac", cortes_nv[1], ifelse(exposicao == "dtpa", cortes_tpa[1], NA)),
+         corte_2 = ifelse(exposicao == "nao_vac", cortes_nv[2], ifelse(exposicao == "dtpa", cortes_tpa[2], NA)))
+salvar_csv(tercis, "tercis_resumo.csv")
+
 # 4. Coberturas nacionais e por UF, ponderadas pelos nascidos vivos -------------
 cobertura_nacional <- cobertura_ano |>
   filter(!is.na(nv), nv > 0) |>

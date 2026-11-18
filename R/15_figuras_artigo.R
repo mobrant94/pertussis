@@ -1,9 +1,10 @@
 # ------------------------------------------------------------------------------
 # 15_figuras_artigo.R
-# Figuras 1 a 5 e Figura S6 do artigo (PNG e TIFF, 400 dpi, pasta figuras/).
+# Figuras 1 a 5 e Figura S6 do artigo (PNG e TIFF, pasta figuras/). O fluxograma mantém
+# a fonte sem serifa e 400 dpi; as demais usam Times New Roman e 600 dpi (00_configuracao.R).
 # ------------------------------------------------------------------------------
 source("R/00_configuracao.R")
-fmt <- function(x, d = 0) format(round(x, d), big.mark = ".", decimal.mark = ",", nsmall = d)
+fmt <- function(x, d = 0) sub("-", "−", format(round(x, d), big.mark = ".", decimal.mark = ",", nsmall = d, trim = TRUE), fixed = TRUE)
 
 # Figura 1 — fluxograma ----------------------------------------------------------
 fl <- read.csv(file.path(pasta_saidas, "fluxograma.csv"), encoding = "UTF-8"); n <- setNames(fl$n, fl$etapa)
@@ -29,10 +30,12 @@ p1 <- ggplot() +
   geom_segment(aes(x = 0, xend = 1.55, y = c(8, 6, 4), yend = c(8, 6, 4)), arrow = arrow(length = unit(2, "mm"))) +
   geom_segment(aes(x = c(-2.2, 0, 2.2), xend = c(-2.2, 0, 2.2), y = 2.55, yend = 1.45), arrow = arrow(length = unit(2, "mm"))) +
   geom_segment(aes(x = -2.2, xend = 2.2, y = 2.55, yend = 2.55)) +
-  geom_label(data = cx, aes(x, y, label = txt), size = 3.2, label.r = unit(0, "mm"), label.padding = unit(3, "mm")) +
-  geom_label(data = ex, aes(x, y, label = txt), size = 2.9, label.r = unit(0, "mm"), fill = "grey96") +
+  geom_label(data = cx, aes(x, y, label = txt), size = 3.2, label.r = unit(0, "mm"), label.padding = unit(3, "mm"), family = "") +
+  geom_label(data = ex, aes(x, y, label = txt), size = 2.9, label.r = unit(0, "mm"), fill = "grey96", family = "") +
   coord_cartesian(xlim = c(-3.4, 4.9), ylim = c(0.4, 9.6)) + theme_void()
-salvar_figura(p1, "fig1_fluxograma", 9, 7.5)
+# fluxograma: formato original (fonte sem serifa, 400 dpi), fora do padrão das demais figuras
+ggsave(file.path(pasta_fig, "fig1_fluxograma.png"), p1, width = 9, height = 7.5, dpi = 400, bg = "white")
+ggsave(file.path(pasta_fig, "fig1_fluxograma.tiff"), p1, width = 9, height = 7.5, dpi = 400, compression = "lzw", bg = "white")
 
 # Figura 2 — taxas anuais por faixa e por região -----------------------------------
 tf <- read.csv(file.path(pasta_saidas, "taxa_anual_faixa.csv"), encoding = "UTF-8") |> mutate(faixa = factor(nomes_faixas[faixa], levels = nomes_faixas))
@@ -42,10 +45,10 @@ prel <- if (max(anos_casos) >= 2025) annotate("rect", xmin = 2024.5, xmax = max(
                                              fill = "grey85", alpha = .5) else NULL   # dados preliminares
 p2a <- ggplot(tf, aes(ano, taxa, colour = faixa)) + prel + geom_line(linewidth = .8) + geom_point(size = 1.4) +
   scale_y_log10(labels = label_number(big.mark = ".", decimal.mark = ",")) + ax +
-  scale_colour_manual(values = c("#08306B", "#4292C6", "#9ECAE1"), name = NULL) +
-  labs(title = "A. Por faixa etária", x = "Ano", y = "Casos por 100.000 pessoas-ano (escala log)") + tema
+  scale_colour_manual(values = c("#08306B", "#4292C6", "#9ECAE1"), name = NULL) + guides(colour = guide_legend(nrow = 2)) +
+  labs(title = "A. Por faixa etária", x = "Ano", y = "Casos por 100.000 pessoas-ano\n(escala log)") + tema
 p2b <- ggplot(tr, aes(ano, taxa, colour = regiao)) + prel + geom_line(linewidth = .8) + geom_point(size = 1.4) + ax +
-  scale_colour_brewer(palette = "Dark2", name = NULL) +
+  scale_colour_brewer(palette = "Dark2", name = NULL) + guides(colour = guide_legend(nrow = 2)) +
   labs(title = "B. Por região (< 5 anos)", x = "Ano", y = "Casos por 100.000 pessoas-ano") + tema
 salvar_figura(p2a + p2b, "fig2_taxas_anuais", 10, 4.4)
 
@@ -75,7 +78,8 @@ p4 <- ggplot(dc, aes(excesso, reorder(nivel, excesso), fill = excesso > 0)) +
                 hjust = ifelse(excesso > 0, -0.1, 1.1)), size = 2.8) +
   facet_wrap(~ estrato, scales = "free_y", ncol = 2) +
   scale_fill_manual(values = c(`TRUE` = "#2166AC", `FALSE` = "#B2182B"), guide = "none") +
-  scale_x_continuous(expand = expansion(mult = c(.35, .35))) +
+  scale_x_continuous(labels = label_number(big.mark = ".", decimal.mark = ",", style_negative = "minus"), expand = expansion(mult = c(.7, .6))) +
+  coord_cartesian(clip = "off") +
   labs(x = "Casos observados em jul/2024–dez/2025 menos esperados pelas taxas de 2016–2019", y = NULL) + tema
 salvar_figura(p4, "fig4_decomposicao_excesso", 10, 6)
 
@@ -85,12 +89,16 @@ co <- read.csv(file.path(pasta_saidas, "uf_correlacoes.csv"), encoding = "UTF-8"
 p5a <- ggplot(uf, aes(delta_dtp, rr)) +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50") +
   geom_smooth(method = "lm", formula = y ~ x, se = TRUE, colour = "grey30", fill = "grey85", linewidth = .6) +
-  geom_point(aes(colour = regiao), size = 2) +
-  geom_text(aes(label = sigla), size = 2.6, vjust = -0.8) +
+  geom_point(aes(fill = regiao), size = 2.3, shape = 21, colour = "white", stroke = .3) +
+  ggrepel::geom_text_repel(aes(label = sigla), size = 2.7, family = FONTE, colour = "grey15", seed = 1,
+                           point.padding = unit(1.2, "mm"), box.padding = unit(1, "mm"), min.segment.length = unit(2, "mm"),
+                           segment.colour = "grey60", segment.size = .25, max.overlaps = Inf) +
   scale_y_log10(labels = label_number(decimal.mark = ",", accuracy = .1)) +
-  scale_colour_brewer(palette = "Dark2", name = NULL) +
+  scale_x_continuous(labels = label_number(decimal.mark = ",", style_negative = "minus")) +
+  scale_fill_brewer(palette = "Dark2", name = NULL) +
+  guides(fill = guide_legend(nrow = 2, override.aes = list(size = 3))) +
   labs(title = paste0("A. UF (Spearman ρ = ", fmt(co$rho_delta, 2), "; p = ", fmt(co$p_delta, 2), ")"),
-       x = "Variação da cobertura de DTP, 2019–2023 vs 2010–2014 (p.p.)",
+       x = "Variação da cobertura de DTP (p.p.),\n2019–2023 vs 2010–2014",
        y = "RR jul/2024–dez/2025 vs 2016–2019, 6 meses a 4 anos") + tema
 md <- read.csv(file.path(pasta_saidas, "modelos_cobertura_excesso.csv"), encoding = "UTF-8") |>
   filter(modelo == "a_rr_categoria", ano_alvo == janela_principal) |>
@@ -99,13 +107,16 @@ md <- read.csv(file.path(pasta_saidas, "modelos_cobertura_excesso.csv"), encodin
          termo = factor(termo, levels = c("Estável ou aumento", "Queda < 10 p.p.", "Queda ≥ 10 p.p.",
                                           "T1 (menor)", "T2", "T3 (maior)",
                                           "Maior cobertura (T3)", "Intermediária (T2)", "Menor cobertura (T1)")))
+rot5 <- c(rotulo_categoria("delta_dtp"), rotulo_categoria("nao_vac"), rotulo_categoria("dtpa"))
 p5b <- ggplot(md, aes(irr, termo)) +
   geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
   geom_errorbarh(aes(xmin = lo, xmax = hi), height = .2) + geom_point(size = 1.8) +
   facet_wrap(~ painel, ncol = 1, scales = "free_y") +
+  scale_y_discrete(labels = function(x) rot5[x]) +
   scale_x_log10(labels = label_number(decimal.mark = ",", accuracy = .1)) +
+  theme(axis.text.y = element_text(size = 8, lineheight = .9)) +
   labs(title = "B. Municípios de todo o país, sem considerar a região", x = "RR jul/2024–dez/2025 vs 2016–2019 (escala log)", y = NULL) + tema
-salvar_figura(p5a + p5b + plot_layout(widths = c(1.2, 1)), "fig5_cobertura_excesso", 10.5, 5.4)
+salvar_figura(p5a + p5b + plot_layout(widths = c(1.2, 1)), "fig5_cobertura_excesso", 10.5, 7.4)
 
 # Figura S6 — ESF como modificadora de efeito ------------------------------------------
 ma <- ler_csv("modelos_aps.csv") |> filter(ano_alvo == janela_principal)
@@ -122,7 +133,9 @@ p6a <- ggplot(a, aes(irr, termo)) +
   geom_vline(xintercept = 1, linetype = "dashed", colour = "grey50") +
   geom_errorbarh(aes(xmin = lo, xmax = hi), height = .2) + geom_point(size = 1.8) +
   facet_wrap(~ painel, ncol = 1, scales = "free_y") +
-  scale_x_log10(labels = label_number(decimal.mark = ",", accuracy = .01)) +
+  scale_y_discrete(labels = function(x) rotulo_esf(sep = "\n")[x]) +
+  scale_x_log10(breaks = c(.7, .8, .9, 1, 1.1, 1.25, 1.5, 2), labels = label_number(decimal.mark = ",", accuracy = .01)) +
+  theme(axis.text.y = element_text(size = 8, lineheight = .9)) +
   labs(title = "A. Efeito da lacuna vacinal por cobertura da APS",
        x = "Razão entre excessos de jul/2024–dez/2025 (escala log)", y = "Cobertura da APS") + tema
 b <- ma |> filter(modelo == "h_grade", grupo == "6m_4a", exposicao == "Variação da DTP") |>
@@ -134,9 +147,10 @@ p6b <- ggplot(b, aes(cobertura, irr, colour = aps)) +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50") +
   geom_pointrange(aes(ymin = lo, ymax = hi), position = position_dodge(width = .5), size = .3) +
   scale_y_log10(labels = label_number(decimal.mark = ",", accuracy = .1)) +
-  scale_colour_manual(values = c("#B2182B", "#F4A582", "#2166AC"), name = "Cobertura da APS") +
+  scale_colour_manual(values = c("#B2182B", "#F4A582", "#2166AC"), name = "Cobertura da APS", labels = function(x) rotulo_esf()[x]) +
+  guides(colour = guide_legend(ncol = 1, title.position = "top")) +
   labs(title = "B. 6 m–4 anos: variação da DTP x cobertura da APS",
        x = "Variação da cobertura de DTP, 2019–2023 vs 2010–2014",
        y = "Razão entre excessos de jul/2024–dez/2025\n(ref.: DTP estável/aumento e APS ≥ 80%)") + tema
-salvar_figura(p6a + p6b + plot_layout(widths = c(1, 1.2)), "fig6_aps_modificacao", 11, 6)
+salvar_figura(p6a + p6b + plot_layout(widths = c(1, 1.2)), "fig6_aps_modificacao", 11, 7.6)
 message("Figuras do artigo prontas")
